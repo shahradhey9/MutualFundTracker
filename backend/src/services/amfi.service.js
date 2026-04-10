@@ -110,15 +110,35 @@ export async function fetchAllAmfiNavs() {
 
 // Full-text search (unchanged but now finds both)
 export async function searchAmfi(query) {
+  // Full-text search across name + AMC with custom sorting
+export async function searchAmfi(query) {
   const all = await fetchAllAmfiNavs();
   const q = query.toLowerCase();
+
   return all
     .filter(f =>
       f.name.toLowerCase().includes(q) ||
       f.amc.toLowerCase().includes(q) ||
       f.schemeCode.includes(q)
     )
-    .slice(0, 50);
+    .sort((a, b) => {
+      // 1. First, keep the same funds grouped together by comparing AMC + Name 
+      // (We strip 'Direct' and 'Regular' from names to compare the base fund name)
+      const nameA = a.name.toLowerCase().replace('direct', '').replace('regular', '').trim();
+      const nameB = b.name.toLowerCase().replace('direct', '').replace('regular', '').trim();
+
+      if (nameA < nameB) return -1;
+      if (nameA > nameB) return 1;
+
+      // 2. If it's the same base fund, put Regular (R) before Direct (D)
+      // In JavaScript, 'Regular' > 'Direct' alphabetically, so b > a for descending
+      if (a.planType === 'REGULAR' && b.planType === 'DIRECT') return -1;
+      if (a.planType === 'DIRECT' && b.planType === 'REGULAR') return 1;
+      
+      return 0;
+    })
+    .slice(0, 50); // Cap results after sorting
+}
 }
 
 export async function getAmfiNav(schemeCode) {
