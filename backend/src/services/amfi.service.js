@@ -1,13 +1,6 @@
 /**
  * AMFI Service
  * Source: https://www.amfiindia.com/spages/NAVAll.txt
- *
- * Format of NAVAll.txt (semicolon-delimited):
- * Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
- *
- * The file has section headers like:
- * Open Ended Schemes(Equity Scheme - Flexi Cap Fund)
- * which we use to extract the category.
  */
 
 import axios from 'axios';
@@ -24,14 +17,14 @@ function parseAmfiText(raw) {
   let currentAmc = 'Unknown';
 
   for (const line of lines) {
-    // Section headers look like: "Open Ended Schemes(Equity Scheme - Flexi Cap Fund)"
+    // Section headers
     if (line.startsWith('Open Ended') || line.startsWith('Close Ended') || line.startsWith('Interval')) {
       const match = line.match(/\((.+)\)/);
       currentCategory = match ? match[1] : line;
       continue;
     }
 
-    // AMC name lines have no semicolons and are not headers
+    // AMC name lines
     if (!line.includes(';')) {
       if (line.length > 2 && !line.startsWith('-')) currentAmc = line;
       continue;
@@ -42,12 +35,20 @@ function parseAmfiText(raw) {
 
     const [schemeCode, isinGrowth, isinDiv, schemeName, navRaw, navDate] = parts;
     const nav = parseFloat(navRaw);
+    
     if (!schemeCode || isNaN(nav) || nav <= 0) continue;
 
-    // Only index Direct Growth plans to avoid duplicates
     const nameUpper = schemeName.toUpperCase();
-    if (!nameUpper.includes('DIRECT') && !nameUpper.includes('DIR')) continue;
+
+    // --- UPDATED FILTERING LOGIC ---
+    
+    // 1. Keep Growth plans (Gr), exclude IDCW/Dividend/Reinvestment to avoid duplicates
+    // Most users want Growth; if you need Dividend plans, remove the next line.
     if (!nameUpper.includes('GROWTH') && !nameUpper.includes('GR')) continue;
+
+    // 2. Identify Plan Type
+    const isDirect = nameUpper.includes('DIRECT') || nameUpper.includes('DIR');
+    const planType = isDirect ? 'DIRECT' : 'REGULAR';
 
     funds.push({
       id: `IN-${schemeCode.trim()}`,
@@ -58,6 +59,7 @@ function parseAmfiText(raw) {
       ticker: `AMFI-${schemeCode.trim()}`,
       isin: isinGrowth?.trim() || null,
       category: currentCategory,
+      planType: planType, // Added for easier filtering in UI
       latestNav: nav,
       navDate: navDate?.trim() || null,
     });
@@ -66,10 +68,10 @@ function parseAmfiText(raw) {
   return funds;
 }
 
-// In-memory store for the full parsed AMFI list (avoids re-parsing on every search)
+// In-memory store logic
 let amfiCache = null;
 let amfiCacheTime = 0;
-const AMFI_MEM_TTL = 4 * 60 * 60 * 1000; // 4h in ms
+const AMFI_MEM_TTL = 4 * 60 * 60 * 1000; 
 
 export async function fetchAllAmfiNavs() {
   const now = Date.now();
@@ -86,22 +88,27 @@ export async function fetchAllAmfiNavs() {
   }
 
   logger.info('Fetching fresh NAVAll.txt from AMFI...');
-  const response = await axios.get(AMFI_URL, {
-    timeout: 30000,
-    responseType: 'text',
-    headers: { 'User-Agent': 'GlobalWealthTracker/1.0' },
-  });
+  try {
+    const response = await axios.get(AMFI_URL, {
+      timeout: 30000,
+      responseType: 'text',
+      headers: { 'User-Agent': 'GlobalWealthTracker/1.0' },
+    });
 
-  const funds = parseAmfiText(response.data);
-  logger.info(`AMFI: parsed ${funds.length} Direct Growth schemes`);
+    const funds = parseAmfiText(response.data);
+    logger.info(`AMFI: parsed ${funds.length} total Growth schemes (Regular + Direct)`);
 
-  await cacheSet(cacheKey, funds, TTL.NAV);
-  amfiCache = funds;
-  amfiCacheTime = now;
-  return funds;
+    await cacheSet(cacheKey, funds, TTL.NAV);
+    amfiCache = funds;
+    amfiCacheTime = now;
+    return funds;
+  } catch (error) {
+    logger.error('Failed to fetch AMFI NAVs', error);
+    return amfiCache || []; // Return stale cache if fetch fails
+  }
 }
 
-// Full-text search across name + AMC
+// Full-text search (unchanged but now finds both)
 export async function searchAmfi(query) {
   const all = await fetchAllAmfiNavs();
   const q = query.toLowerCase();
@@ -111,10 +118,9 @@ export async function searchAmfi(query) {
       f.amc.toLowerCase().includes(q) ||
       f.schemeCode.includes(q)
     )
-    .slice(0, 50); // cap results
+    .slice(0, 50);
 }
 
-// Get current NAV for a single scheme code
 export async function getAmfiNav(schemeCode) {
   const cacheKey = `amfi:nav:${schemeCode}`;
   const cached = await cacheGet(cacheKey);
