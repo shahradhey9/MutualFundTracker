@@ -46,8 +46,11 @@ public class YahooFinanceService : IYahooFinanceService
 
         var crumb = await EnsureCrumbAsync(ct);
         var crumbParam = crumb is not null ? $"&crumb={Uri.EscapeDataString(crumb)}" : "";
+        // Normalise to lowercase — Yahoo Finance is case-insensitive but lowercase
+        // avoids any edge cases with crumb-signed requests.
+        var normalisedQuery = query.Trim().ToLowerInvariant();
         var url = $"https://query2.finance.yahoo.com/v1/finance/search" +
-                  $"?q={Uri.EscapeDataString(query)}&quotesCount=20&newsCount=0" +
+                  $"?q={Uri.EscapeDataString(normalisedQuery)}&quotesCount=20&newsCount=0" +
                   $"&enableFuzzyQuery=false&region=US&lang=en-US{crumbParam}";
 
         var json = await SafeGetStringAsync(url, ct);

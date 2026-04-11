@@ -10,6 +10,7 @@ public record PortfolioItemDto(
     string Ticker,
     string? Category,
     Region Region,
+    string Currency,         // "INR" for India holdings, "USD" (or quote currency) for Global
     decimal Units,
     decimal? AvgCost,
     decimal? LiveNav,

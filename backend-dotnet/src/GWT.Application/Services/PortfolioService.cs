@@ -47,55 +47,86 @@ public class PortfolioService : IPortfolioService
         var indiaHoldings = userHoldings.Where(h => h.Fund.Region == Region.INDIA).ToList();
         var globalHoldings = userHoldings.Where(h => h.Fund.Region == Region.GLOBAL).ToList();
 
-        var navMap = new Dictionary<string, decimal>();
+        var navMap      = new Dictionary<string, decimal>();
+        var currencyMap = new Dictionary<string, string>();
 
-        // India: fetch one-by-one from cached AMFI data (single HTTP call, all in-memory)
-        foreach (var h in indiaHoldings)
+        // India: fetch NAVs from AMFI (single HTTP call, all in-memory)
+        // Wrapped in try-catch: a transient AMFI failure must not blank the whole portfolio.
+        try
         {
-            if (h.Fund.SchemeCode is not null)
+            foreach (var h in indiaHoldings)
             {
-                var nav = await _amfi.GetNavAsync(h.Fund.SchemeCode, ct);
-                if (nav.HasValue) navMap[h.FundId] = nav.Value;
+                currencyMap[h.FundId] = "INR";
+                if (h.Fund.SchemeCode is not null)
+                {
+                    var nav = await _amfi.GetNavAsync(h.Fund.SchemeCode, ct);
+                    if (nav.HasValue) navMap[h.FundId] = nav.Value;
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AMFI NAV fetch failed during portfolio load — holdings will show without live NAV");
+            foreach (var h in indiaHoldings) currencyMap[h.FundId] = "INR";
         }
 
         // Global: batch fetch from Yahoo to avoid N+1
+        // Also wrapped — Yahoo failure must not prevent portfolio from rendering.
         if (globalHoldings.Count > 0)
         {
-            var tickers = globalHoldings.Select(h => h.Fund.Ticker).Distinct();
-            var quotes = await _yahoo.GetBatchQuotesAsync(tickers, ct);
-            foreach (var h in globalHoldings)
+            try
             {
-                if (quotes.TryGetValue(h.Fund.Ticker, out var q))
-                    navMap[h.FundId] = q.Price;
+                var tickers = globalHoldings.Select(h => h.Fund.Ticker).Distinct();
+                var quotes  = await _yahoo.GetBatchQuotesAsync(tickers, ct);
+                foreach (var h in globalHoldings)
+                {
+                    if (quotes.TryGetValue(h.Fund.Ticker, out var q))
+                    {
+                        navMap[h.FundId]      = q.Price;
+                        currencyMap[h.FundId] = q.Currency ?? "USD";
+                    }
+                    else
+                    {
+                        currencyMap[h.FundId] = "USD";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Yahoo Finance batch quote fetch failed during portfolio load — holdings will show without live NAV");
+                foreach (var h in globalHoldings) currencyMap[h.FundId] = "USD";
             }
         }
 
         var result = userHoldings.Select(h =>
         {
             navMap.TryGetValue(h.FundId, out var liveNav);
+            var currency = currencyMap.GetValueOrDefault(h.FundId,
+                h.Fund.Region == Region.INDIA ? "INR" : "USD");
+
             decimal? currentValue = liveNav > 0 ? h.Units * liveNav : null;
-            decimal? costBasis = h.AvgCost.HasValue ? h.Units * h.AvgCost.Value : null;
-            decimal? gain = (currentValue.HasValue && costBasis.HasValue) ? currentValue - costBasis : null;
-            decimal? gainPct = (gain.HasValue && costBasis is > 0) ? gain / costBasis * 100 : null;
+            decimal? costBasis    = h.AvgCost.HasValue ? h.Units * h.AvgCost.Value : null;
+            decimal? gain         = (currentValue.HasValue && costBasis.HasValue) ? currentValue - costBasis : null;
+            decimal? gainPct      = (gain.HasValue && costBasis is > 0) ? gain / costBasis * 100 : null;
 
             return new PortfolioItemDto(
-                HoldingId: h.Id,
-                FundId: h.FundId,
-                Name: h.Fund.Name,
-                Amc: h.Fund.Amc,
-                Ticker: h.Fund.Ticker,
-                Category: h.Fund.Category,
-                Region: h.Fund.Region,
-                Units: h.Units,
-                AvgCost: h.AvgCost,
-                LiveNav: liveNav > 0 ? liveNav : null,
+                HoldingId:    h.Id,
+                FundId:       h.FundId,
+                Name:         h.Fund.Name,
+                Amc:          h.Fund.Amc,
+                Ticker:       h.Fund.Ticker,
+                Category:     h.Fund.Category,
+                Region:       h.Fund.Region,
+                Currency:     currency,
+                Units:        h.Units,
+                AvgCost:      h.AvgCost,
+                LiveNav:      liveNav > 0 ? liveNav : null,
                 CurrentValue: currentValue,
-                CostBasis: costBasis,
-                Gain: gain,
-                GainPct: gainPct.HasValue ? Math.Round(gainPct.Value, 2) : null,
-                PurchaseAt: h.PurchaseAt,
-                NavDate: h.Fund.NavDate
+                CostBasis:    costBasis,
+                Gain:         gain,
+                GainPct:      gainPct.HasValue ? Math.Round(gainPct.Value, 2) : null,
+                PurchaseAt:   h.PurchaseAt,
+                NavDate:      h.Fund.NavDate
             );
         }).ToList();
 
