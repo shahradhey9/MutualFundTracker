@@ -58,11 +58,28 @@ public class YahooFinanceService : IYahooFinanceService
         {
             using var doc = JsonDocument.Parse(json);
 
-            // Robust path: bail early rather than throw on unexpected shape
-            if (!doc.RootElement.TryGetProperty("finance", out var finance)) return results;
-            if (!finance.TryGetProperty("result", out var resultEl)) return results;
-            if (resultEl.ValueKind != JsonValueKind.Array || resultEl.GetArrayLength() == 0) return results;
-            if (!resultEl[0].TryGetProperty("quotes", out var quotes)) return results;
+            // Yahoo Finance changed their response shape.
+            // New (2025+): { "quotes": [...], "count": N, ... }  — flat root
+            // Old:         { "finance": { "result": [{ "quotes": [...] }] } }
+            // Support both so a future rollback doesn't break us again.
+            JsonElement quotes;
+            if (doc.RootElement.TryGetProperty("quotes", out quotes))
+            {
+                // New flat structure — quotes is at root
+            }
+            else if (doc.RootElement.TryGetProperty("finance", out var finance) &&
+                     finance.TryGetProperty("result", out var resultEl) &&
+                     resultEl.ValueKind == JsonValueKind.Array &&
+                     resultEl.GetArrayLength() > 0 &&
+                     resultEl[0].TryGetProperty("quotes", out quotes))
+            {
+                // Old nested structure — finance.result[0].quotes
+            }
+            else
+            {
+                _logger.LogWarning("Yahoo Finance search response has unexpected shape for query '{Query}'", query);
+                return results;
+            }
 
             foreach (var q in quotes.EnumerateArray())
             {
@@ -70,7 +87,9 @@ public class YahooFinanceService : IYahooFinanceService
                 var ticker   = q.TryGetProperty("symbol",    out var sym) ? sym.GetString() : null;
                 var name     = q.TryGetProperty("shortname", out var sn)  ? sn.GetString()
                              : q.TryGetProperty("longname",  out var ln)  ? ln.GetString() : ticker;
-                var exchange = q.TryGetProperty("exchange",  out var ex)  ? ex.GetString() : null;
+                // Prefer exchDisp ("NYSEArca") over the raw code ("PCX")
+                var exchange = q.TryGetProperty("exchDisp",  out var exd) ? exd.GetString()
+                             : q.TryGetProperty("exchange",  out var ex)  ? ex.GetString() : null;
 
                 if (ticker is null) continue;
 
