@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { api } from './lib/api.js';
 import { useUIStore } from './lib/store.js';
 import { useAuth } from './hooks/useAuth.js';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
@@ -178,7 +179,18 @@ function Shell() {
   );
 }
 
+// Keep the Render free-tier backend alive while any user has the app open.
+// Render sleeps services after 15 min of inactivity; pinging every 10 min prevents that.
+function useKeepAlive() {
+  useEffect(() => {
+    const ping = () => api.get('/health').catch(() => {});
+    const id = setInterval(ping, 10 * 60 * 1000); // every 10 minutes
+    return () => clearInterval(id);
+  }, []);
+}
+
 export default function App() {
+  useKeepAlive();
   return (
     <QueryClientProvider client={queryClient}>
       <Shell />
