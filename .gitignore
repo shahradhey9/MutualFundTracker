@@ -1,0 +1,25 @@
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# ── .NET ─────────────────────────────────────────────────────────────────────
+**/bin/
+**/obj/
+*.user
+.vs/
+.idea/
+*.suo
+*.swp
+
+# ── Environment files (secrets) ───────────────────────────────────────────────
+.env
+*.env
+*.env.local
+# Keep appsettings.Development.json out of repo (contains local DB password)
+backend-dotnet/src/GWT.Api/appsettings.Development.json
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

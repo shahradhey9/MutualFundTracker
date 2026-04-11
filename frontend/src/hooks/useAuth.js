@@ -1,19 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { api } from '../lib/api.js';
+import { useAuthStore } from '../lib/store.js';
 import { useQueryClient } from '@tanstack/react-query';
 
 const TOKEN_KEY = 'gwt_token';
 
 export function useAuth() {
   const qc = useQueryClient();
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { user, authLoading, authInitialized, setUser, setAuthLoading, setAuthInitialized } = useAuthStore();
 
-  // Restore session on mount
+  // Restore session from localStorage — guarded by authInitialized so this
+  // only runs once even though multiple components call useAuth().
   useEffect(() => {
+    if (authInitialized) return;
+    setAuthInitialized(true);
+
     const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) { setLoading(false); return; }
+    if (!token) { setAuthLoading(false); return; }
 
     api.get('/auth/me')
       .then(res => setUser(res.data))
@@ -21,31 +24,29 @@ export function useAuth() {
         localStorage.removeItem(TOKEN_KEY);
         setUser(null);
       })
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => setAuthLoading(false));
+  }, [authInitialized, setUser, setAuthLoading, setAuthInitialized]);
 
   const login = useCallback(async (email, password) => {
-    setError(null);
     const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem(TOKEN_KEY, data.token);
     setUser(data.user);
-    qc.invalidateQueries(); // refresh all queries for this user
+    qc.invalidateQueries();
     return data.user;
-  }, [qc]);
+  }, [qc, setUser]);
 
   const register = useCallback(async (email, name, password) => {
-    setError(null);
     const { data } = await api.post('/auth/register', { email, name, password });
     localStorage.setItem(TOKEN_KEY, data.token);
     setUser(data.user);
     return data.user;
-  }, []);
+  }, [setUser]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
-    qc.clear(); // clear all cached queries
-  }, [qc]);
+    qc.clear();
+  }, [qc, setUser]);
 
-  return { user, loading, error, login, register, logout };
+  return { user, loading: authLoading, login, register, logout };
 }

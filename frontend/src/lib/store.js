@@ -1,5 +1,15 @@
 import { create } from 'zustand';
 
+// ── Auth store (singleton — prevents split-brain between Shell and LoginPage) ──
+export const useAuthStore = create((set) => ({
+  user: null,
+  authLoading: true,
+  authInitialized: false,
+  setUser: (user) => set({ user }),
+  setAuthLoading: (v) => set({ authLoading: v }),
+  setAuthInitialized: (v) => set({ authInitialized: v }),
+}));
+
 export const useUIStore = create((set) => ({
   activeTab: 'portfolio',
   setActiveTab: (tab) => set({ activeTab: tab }),

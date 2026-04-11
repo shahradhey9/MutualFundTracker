@@ -1,0 +1,6 @@
+@GWT.Api_HostAddress = http://localhost:5048
+
+GET {{GWT.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

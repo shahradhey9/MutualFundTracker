@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GWT.Api/GWT.Api.csproj" />
+    <Project Path="src/GWT.Application/GWT.Application.csproj" />
+    <Project Path="src/GWT.Domain/GWT.Domain.csproj" />
+    <Project Path="src/GWT.Infrastructure/GWT.Infrastructure.csproj" />
+  </Folder>
+</Solution>
