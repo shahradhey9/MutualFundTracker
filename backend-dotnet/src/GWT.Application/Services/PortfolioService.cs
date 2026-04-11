@@ -121,7 +121,8 @@ public class PortfolioService : IPortfolioService
             existing.Units = totalUnits;
             existing.AvgCost = newAvgCost;
             // Keep the earliest purchase date
-            existing.PurchaseAt = request.PurchaseAt < existing.PurchaseAt ? request.PurchaseAt : existing.PurchaseAt;
+            var purchaseAtUtc = DateTime.SpecifyKind(request.PurchaseAt, DateTimeKind.Utc);
+            existing.PurchaseAt = purchaseAtUtc < existing.PurchaseAt ? purchaseAtUtc : existing.PurchaseAt;
             existing.UpdatedAt = DateTime.UtcNow;
             holding = await _holdings.UpdateAsync(existing, ct);
         }
@@ -134,7 +135,7 @@ public class PortfolioService : IPortfolioService
                 FundId = request.FundId,
                 Units = request.Units,
                 AvgCost = request.AvgCost,
-                PurchaseAt = request.PurchaseAt,
+                PurchaseAt = DateTime.SpecifyKind(request.PurchaseAt, DateTimeKind.Utc),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             }, ct);
@@ -155,7 +156,7 @@ public class PortfolioService : IPortfolioService
 
         if (request.Units.HasValue) holding.Units = request.Units.Value;
         if (request.AvgCost.HasValue) holding.AvgCost = request.AvgCost;
-        if (request.PurchaseAt.HasValue) holding.PurchaseAt = request.PurchaseAt.Value;
+        if (request.PurchaseAt.HasValue) holding.PurchaseAt = DateTime.SpecifyKind(request.PurchaseAt.Value, DateTimeKind.Utc);
         holding.UpdatedAt = DateTime.UtcNow;
 
         var updated = await _holdings.UpdateAsync(holding, ct);

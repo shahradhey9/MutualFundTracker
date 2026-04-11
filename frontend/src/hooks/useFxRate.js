@@ -1,37 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api.js';
 
-// Updated April 2026 — real market rate
+// Used when the backend FX endpoint is unavailable
 const FALLBACK_INR_PER_USD = 84.47;
 
 export function useFxRate() {
   const { data } = useQuery({
     queryKey: ['fx', 'USD', 'INR'],
     queryFn: async () => {
-      // Try Frankfurter first (free, no key)
-      try {
-        const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=INR');
-        if (res.ok) {
-          const json = await res.json();
-          const rate = json.rates?.INR;
-          if (rate && rate > 0) {
-            return { inrPerUsd: rate, usdPerInr: 1 / rate, isLive: true, source: 'Frankfurter' };
-          }
-        }
-      } catch (_) {}
-
-      // Fallback: exchangerate-api (also free, no key for basic)
-      try {
-        const res = await fetch('https://open.er-api.com/v6/latest/USD');
-        if (res.ok) {
-          const json = await res.json();
-          const rate = json.rates?.INR;
-          if (rate && rate > 0) {
-            return { inrPerUsd: rate, usdPerInr: 1 / rate, isLive: true, source: 'ExchangeRate-API' };
-          }
-        }
-      } catch (_) {}
-
-      throw new Error('All FX APIs unavailable');
+      // Proxy through our backend to avoid browser CORS restrictions on third-party FX APIs
+      const { data: json } = await api.get('/fx/rate', { params: { from: 'USD', to: 'INR' } });
+      const rate = json?.rate;
+      if (rate && rate > 0) {
+        return { inrPerUsd: rate, usdPerInr: 1 / rate, isLive: json.isLive ?? true, source: 'Backend' };
+      }
+      throw new Error('FX rate unavailable');
     },
     staleTime: 4 * 60 * 60 * 1000,  // 4 hours
     retry: 1,

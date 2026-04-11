@@ -60,6 +60,12 @@ public static class DependencyInjection
                 "Mozilla/5.0 (compatible; GWT/1.0)");
         });
 
+        services.AddHttpClient<IFxService, FrankfurterFxService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.Add("User-Agent", "GWT/1.0");
+        });
+
         // ── Background Job ────────────────────────────────────────────────
         services.AddHostedService<NavSyncBackgroundService>();
 
