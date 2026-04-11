@@ -151,20 +151,27 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Apply pending EF Core migrations on every startup — idempotent and safe in all environments
+Log.Information("GWT API starting on {Environment}", app.Environment.EnvironmentName);
+
+// Start accepting HTTP requests immediately so Render's health check passes
+// and the frontend's early /health ping gets a fast 200 — reducing perceived cold-start time.
+// Migrations run in a background task; they are idempotent and typically instant on
+// subsequent restarts (only a schema metadata check when no pending migrations exist).
+await app.StartAsync();
+
+_ = Task.Run(async () =>
 {
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
     try
     {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
         await db.Database.MigrateAsync();
+        Log.Information("Database migrations applied successfully.");
     }
     catch (Exception ex)
     {
         Log.Error(ex, "Database migration failed on startup");
-        throw;
     }
-}
+});
 
-Log.Information("GWT API starting on {Environment}", app.Environment.EnvironmentName);
-await app.RunAsync();
+await app.WaitForShutdownAsync();

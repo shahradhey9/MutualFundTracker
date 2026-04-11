@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useUIStore } from './lib/store.js';
 import { useAuth } from './hooks/useAuth.js';
@@ -118,10 +119,38 @@ function TopBar() {
   );
 }
 
+function WakingUpBanner() {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+      background: '#1d4ed8', color: '#fff',
+      fontSize: 12, fontFamily: 'var(--font-mono, monospace)',
+      padding: '8px 16px', textAlign: 'center',
+    }}>
+      Server is waking up from sleep — this takes ~15 s on the free tier. Hang tight…
+    </div>
+  );
+}
+
 function Shell() {
   const { user, loading, logout } = useAuth();
   const { activeTab, setActiveTab } = useUIStore();
-  if (loading) return <LoadingSpinner label="Loading your portfolio…" />;
+  const [showWakingUp, setShowWakingUp] = useState(false);
+
+  // Show a banner if the backend is taking more than 3 s to respond.
+  // Clears automatically once loading finishes.
+  useEffect(() => {
+    if (!loading) { setShowWakingUp(false); return; }
+    const t = setTimeout(() => setShowWakingUp(true), 3000);
+    return () => clearTimeout(t);
+  }, [loading]);
+
+  if (loading) return (
+    <>
+      {showWakingUp && <WakingUpBanner />}
+      <LoadingSpinner label="Connecting to server…" />
+    </>
+  );
   if (!user)   return <LoginPage />;
   return (
     <>
