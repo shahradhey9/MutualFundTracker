@@ -27,6 +27,26 @@ public class NavSyncBackgroundService : BackgroundService
     {
         _logger.LogInformation("NAV sync background service started. Scheduled daily at {Time} UTC.", SyncTime);
 
+        // Warm up the AMFI static cache at startup so the first user search is fast.
+        // Run in background — don't block the app from starting; failures are non-fatal.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Give the rest of the application a moment to finish initialising.
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                using var scope = _scopeFactory.CreateScope();
+                var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+                await amfi.FetchAllNavsAsync(stoppingToken);
+                _logger.LogInformation("AMFI warm-up complete — NAVAll.txt cached in memory.");
+            }
+            catch (OperationCanceledException) { /* shutting down */ }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "AMFI warm-up failed — first search will be slower.");
+            }
+        }, stoppingToken);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             var delay = CalculateDelay();

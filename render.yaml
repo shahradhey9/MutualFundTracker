@@ -42,10 +42,9 @@ services:
       - key: AdminKey
         generateValue: true
 
-      # CORS — fill in after the frontend service is deployed.
-      # Example value: https://gwt-frontend.onrender.com
+      # CORS — allow the Render-hosted frontend
       - key: AllowedOrigins__0
-        sync: false
+        value: https://gwt-frontend-wklj.onrender.com
 
   # ── React / Vite frontend (static site) ────────────────────────────────────
   - type: web
