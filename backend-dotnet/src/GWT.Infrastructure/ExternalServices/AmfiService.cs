@@ -10,6 +10,11 @@ namespace GWT.Infrastructure.ExternalServices;
 /// Fetches and parses the AMFI NAVAll.txt flat file.
 /// The file is pipe-delimited: SchemeCode|ISINGrowth|ISINDividend|SchemeName|NAV|Date
 /// with AMC header rows and category sub-headers in between.
+///
+/// Because AmfiService is registered as a typed HttpClient (transient), Redis is the
+/// intended cache layer.  On Render free tier Redis is unavailable, so we add a
+/// process-level static cache as a fallback so the 2 MB file is fetched at most once
+/// per 4-hour window regardless of Redis availability.
 /// </summary>
 public class AmfiService : IAmfiService
 {
@@ -22,6 +27,12 @@ public class AmfiService : IAmfiService
     private const string CacheKeySearch = "amfi:search:";
     private static readonly TimeSpan NavCacheTtl = TimeSpan.FromHours(4);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
+
+    // Process-level static cache — survives across transient DI instances.
+    // Written once and read many times, so volatile + lock on write is sufficient.
+    private static volatile List<AmfiFundRawDto>? _memCache;
+    private static DateTime _memCacheExpiry = DateTime.MinValue;
+    private static readonly SemaphoreSlim _fetchLock = new(1, 1);
 
     public AmfiService(HttpClient http, ICacheService cache, ILogger<AmfiService> logger)
     {
@@ -37,13 +48,14 @@ public class AmfiService : IAmfiService
         if (cached is not null) return cached;
 
         var allNavs = await FetchAllNavsAsync(ct);
-        var lower = query.ToLowerInvariant();
+
+        // Split query into words; every word must appear somewhere in the fund name or AMC.
+        // This lets "hdfc mid cap" match "HDFC Mid-Cap Opportunities Fund - Direct Growth"
+        // even though "hdfc mid cap" is not a continuous substring of the name.
+        var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         var results = allNavs
-            .Where(f =>
-                f.SchemeName.Contains(lower, StringComparison.OrdinalIgnoreCase) ||
-                f.Amc.Contains(lower, StringComparison.OrdinalIgnoreCase) ||
-                f.SchemeCode.Contains(lower, StringComparison.OrdinalIgnoreCase))
+            .Where(f => MatchesAllWords(f, words))
             .Take(50)
             .Select(f => new FundSearchResultDto(
                 Id: $"IN-{f.SchemeCode}",
@@ -61,6 +73,22 @@ public class AmfiService : IAmfiService
         return results;
     }
 
+    /// <summary>
+    /// Returns true when every word in <paramref name="words"/> appears anywhere in the
+    /// fund's scheme name, AMC name, or scheme code (case-insensitive).
+    /// </summary>
+    private static bool MatchesAllWords(AmfiFundRawDto f, string[] words)
+    {
+        foreach (var word in words)
+        {
+            if (!f.SchemeName.Contains(word, StringComparison.OrdinalIgnoreCase) &&
+                !f.Amc.Contains(word, StringComparison.OrdinalIgnoreCase) &&
+                !f.SchemeCode.Contains(word, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        return true;
+    }
+
     public async Task<decimal?> GetNavAsync(string schemeCode, CancellationToken ct = default)
     {
         var allNavs = await FetchAllNavsAsync(ct);
@@ -70,16 +98,42 @@ public class AmfiService : IAmfiService
 
     public async Task<List<AmfiFundRawDto>> FetchAllNavsAsync(CancellationToken ct = default)
     {
+        // 1. Process-level static cache — fastest path, survives DI transient churn.
+        if (_memCache is not null && DateTime.UtcNow < _memCacheExpiry)
+            return _memCache;
+
+        // 2. Redis / distributed cache (no-op on Render free tier but cheap to check).
         var cached = await _cache.GetAsync<List<AmfiFundRawDto>>(CacheKeyAll, ct);
-        if (cached is not null) return cached;
+        if (cached is not null)
+        {
+            _memCache = cached;
+            _memCacheExpiry = DateTime.UtcNow.Add(NavCacheTtl);
+            return cached;
+        }
 
-        _logger.LogInformation("Fetching AMFI NAVAll.txt from {Url}", NavAllUrl);
-        var text = await _http.GetStringAsync(NavAllUrl, ct);
-        var parsed = ParseNavAll(text);
+        // 3. Fetch from AMFI — serialize via lock so only one thread hits the network.
+        await _fetchLock.WaitAsync(ct);
+        try
+        {
+            // Double-checked locking after acquiring the semaphore.
+            if (_memCache is not null && DateTime.UtcNow < _memCacheExpiry)
+                return _memCache;
 
-        await _cache.SetAsync(CacheKeyAll, parsed, NavCacheTtl, ct);
-        _logger.LogInformation("AMFI NAVAll.txt parsed: {Count} Growth plan entries", parsed.Count);
-        return parsed;
+            _logger.LogInformation("Fetching AMFI NAVAll.txt from {Url}", NavAllUrl);
+            var text = await _http.GetStringAsync(NavAllUrl, ct);
+            var parsed = ParseNavAll(text);
+
+            _memCache = parsed;
+            _memCacheExpiry = DateTime.UtcNow.Add(NavCacheTtl);
+
+            await _cache.SetAsync(CacheKeyAll, parsed, NavCacheTtl, ct);
+            _logger.LogInformation("AMFI NAVAll.txt parsed: {Count} Growth plan entries", parsed.Count);
+            return parsed;
+        }
+        finally
+        {
+            _fetchLock.Release();
+        }
     }
 
     // ── Parsing ──────────────────────────────────────────────────────────────

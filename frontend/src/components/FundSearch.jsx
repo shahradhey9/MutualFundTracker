@@ -12,6 +12,11 @@ function useDebounce(value, delay = 350) {
   return debounced;
 }
 
+const REGIONS = [
+  { value: 'INDIA',  label: 'India',  sub: 'AMFI — 4,000+ Direct Growth funds' },
+  { value: 'GLOBAL', label: 'Global', sub: 'Yahoo Finance — equities, ETFs, mutual funds' },
+];
+
 export function FundSearch() {
   const {
     searchQuery, setSearchQuery,
@@ -26,73 +31,91 @@ export function FundSearch() {
   const handleRegionChange = useCallback((region) => {
     setSearchRegion(region);
     setSelectedFund(null);
-  }, [setSearchRegion, setSelectedFund]);
-
-  const inputStyle = {
-    flex: 1,
-    padding: '9px 14px',
-    fontSize: 13,
-    border: '0.5px solid var(--color-border-secondary)',
-    borderRadius: 'var(--border-radius-md)',
-    background: 'var(--color-background-primary)',
-    color: 'var(--color-text-primary)',
-    outline: 'none',
-  };
-
-  const segmentBase = {
-    padding: '8px 16px',
-    fontSize: 13,
-    border: '0.5px solid var(--color-border-secondary)',
-    cursor: 'pointer',
-    transition: 'background 0.12s',
-  };
+    clearSearch();
+  }, [setSearchRegion, setSelectedFund, clearSearch]);
 
   return (
     <div>
-      {/* Search bar */}
+      {/* Region radio buttons */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 14 }}>
+        {REGIONS.map(({ value, label, sub }) => {
+          const active = searchRegion === value;
+          return (
+            <label
+              key={value}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                cursor: 'pointer',
+                padding: '10px 14px',
+                borderRadius: 'var(--border-radius-md)',
+                border: `0.5px solid ${active ? 'var(--color-text-primary)' : 'var(--color-border-secondary)'}`,
+                background: active ? 'var(--color-background-secondary)' : 'transparent',
+                transition: 'border-color 0.15s, background 0.15s',
+                flex: 1,
+              }}
+            >
+              <input
+                type="radio"
+                name="fund-region"
+                value={value}
+                checked={active}
+                onChange={() => handleRegionChange(value)}
+                style={{ marginTop: 2, accentColor: 'var(--color-text-primary)', cursor: 'pointer' }}
+              />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                  {sub}
+                </div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+
+      {/* Search input */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input
-          style={inputStyle}
+          style={{
+            flex: 1,
+            padding: '9px 14px',
+            fontSize: 13,
+            border: '0.5px solid var(--color-border-secondary)',
+            borderRadius: 'var(--border-radius-md)',
+            background: 'var(--color-background-primary)',
+            color: 'var(--color-text-primary)',
+            outline: 'none',
+          }}
           type="text"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
-          placeholder={searchRegion === 'INDIA'
-            ? 'Search by fund name or AMC — e.g. "Parag Parikh" or "HDFC"'
-            : 'Search by name or ticker — e.g. "Vanguard" or "VOO"'}
+          placeholder={
+            searchRegion === 'INDIA'
+              ? 'Search by fund name or AMC — e.g. "Parag Parikh" or "HDFC Mid"'
+              : 'Search by name or ticker — e.g. "Vanguard" or "VOO"'
+          }
           autoFocus
         />
         {searchQuery && (
           <button
             onClick={clearSearch}
-            style={{ ...segmentBase, borderRadius: 'var(--border-radius-md)', background: 'none', color: 'var(--color-text-secondary)' }}
+            style={{
+              padding: '8px 16px',
+              fontSize: 13,
+              border: '0.5px solid var(--color-border-secondary)',
+              borderRadius: 'var(--border-radius-md)',
+              background: 'none',
+              color: 'var(--color-text-secondary)',
+              cursor: 'pointer',
+            }}
           >
             ✕
           </button>
         )}
-      </div>
-
-      {/* Region toggle */}
-      <div style={{ display: 'flex', marginBottom: 16, borderRadius: 'var(--border-radius-md)', overflow: 'hidden', border: '0.5px solid var(--color-border-secondary)', width: 'fit-content' }}>
-        {['INDIA', 'GLOBAL'].map((r, i) => (
-          <button
-            key={r}
-            onClick={() => handleRegionChange(r)}
-            style={{
-              ...segmentBase,
-              borderRadius: 0,
-              borderLeft: i > 0 ? '0.5px solid var(--color-border-secondary)' : 'none',
-              background: searchRegion === r
-                ? 'var(--color-text-primary)'
-                : 'var(--color-background-primary)',
-              color: searchRegion === r
-                ? 'var(--color-background-primary)'
-                : 'var(--color-text-secondary)',
-              fontWeight: searchRegion === r ? 500 : 400,
-            }}
-          >
-            {r === 'INDIA' ? 'India (AMFI)' : 'Global (Yahoo Finance)'}
-          </button>
-        ))}
       </div>
 
       {/* Results */}
@@ -130,22 +153,12 @@ export function FundSearch() {
                       padding: '10px 12px',
                       borderRadius: 'var(--border-radius-md)',
                       cursor: 'pointer',
-                      background: selectedFund?.id === fund.id
-                        ? 'var(--color-background-secondary)'
-                        : 'transparent',
-                      outline: selectedFund?.id === fund.id
-                        ? '1px solid var(--color-border-secondary)'
-                        : 'none',
+                      background: selectedFund?.id === fund.id ? 'var(--color-background-secondary)' : 'transparent',
+                      outline: selectedFund?.id === fund.id ? '1px solid var(--color-border-secondary)' : 'none',
                       transition: 'background 0.1s',
                     }}
-                    onMouseEnter={e => {
-                      if (selectedFund?.id !== fund.id)
-                        e.currentTarget.style.background = 'var(--color-background-secondary)';
-                    }}
-                    onMouseLeave={e => {
-                      if (selectedFund?.id !== fund.id)
-                        e.currentTarget.style.background = 'transparent';
-                    }}
+                    onMouseEnter={e => { if (selectedFund?.id !== fund.id) e.currentTarget.style.background = 'var(--color-background-secondary)'; }}
+                    onMouseLeave={e => { if (selectedFund?.id !== fund.id) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -181,9 +194,8 @@ export function FundSearch() {
 
       {debouncedQuery.length < 2 && (
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', lineHeight: 1.8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-md)', padding: '14px 16px' }}>
-          ℹ India — searches live AMFI NAVAll.txt (4,000+ Direct Growth schemes)<br />
-          ℹ Global — searches Yahoo Finance (equities, ETFs, mutual funds)<br />
-          ℹ Type at least 2 characters to search
+          ℹ Type at least 2 characters to search<br />
+          ℹ Partial words work — try "parag", "mid cap", "hdfc flexi"
         </div>
       )}
     </div>
