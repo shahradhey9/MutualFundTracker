@@ -10,26 +10,20 @@ namespace GWT.Application.Services;
 public class PortfolioService : IPortfolioService
 {
     private readonly IHoldingRepository _holdings;
-    private readonly IFundMetaRepository _funds;
-    private readonly IAmfiService _amfi;
-    private readonly IYahooFinanceService _yahoo;
     private readonly ICacheService _cache;
     private readonly ILogger<PortfolioService> _logger;
 
-    private static readonly TimeSpan PortfolioCacheTtl = TimeSpan.FromMinutes(1);
+    // Portfolio is assembled from stored FundMeta.LatestNav — no live HTTP calls.
+    // NAVs are refreshed daily by NavSyncBackgroundService and on first add by EnsureFundAsync.
+    // Cache TTL of 5 min avoids redundant DB queries on repeated page loads.
+    private static readonly TimeSpan PortfolioCacheTtl = TimeSpan.FromMinutes(5);
 
     public PortfolioService(
         IHoldingRepository holdings,
-        IFundMetaRepository funds,
-        IAmfiService amfi,
-        IYahooFinanceService yahoo,
         ICacheService cache,
         ILogger<PortfolioService> logger)
     {
         _holdings = holdings;
-        _funds = funds;
-        _amfi = amfi;
-        _yahoo = yahoo;
         _cache = cache;
         _logger = logger;
     }
@@ -43,66 +37,15 @@ public class PortfolioService : IPortfolioService
         var userHoldings = await _holdings.GetByUserAsync(userId, ct);
         if (userHoldings.Count == 0) return [];
 
-        // Fetch live NAVs — split by region to use the right source
-        var indiaHoldings = userHoldings.Where(h => h.Fund.Region == Region.INDIA).ToList();
-        var globalHoldings = userHoldings.Where(h => h.Fund.Region == Region.GLOBAL).ToList();
-
-        var navMap      = new Dictionary<string, decimal>();
-        var currencyMap = new Dictionary<string, string>();
-
-        // India: fetch NAVs from AMFI (single HTTP call, all in-memory)
-        // Wrapped in try-catch: a transient AMFI failure must not blank the whole portfolio.
-        try
-        {
-            foreach (var h in indiaHoldings)
-            {
-                currencyMap[h.FundId] = "INR";
-                if (h.Fund.SchemeCode is not null)
-                {
-                    var nav = await _amfi.GetNavAsync(h.Fund.SchemeCode, ct);
-                    if (nav.HasValue) navMap[h.FundId] = nav.Value;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "AMFI NAV fetch failed during portfolio load — holdings will show without live NAV");
-            foreach (var h in indiaHoldings) currencyMap[h.FundId] = "INR";
-        }
-
-        // Global: batch fetch from Yahoo to avoid N+1
-        // Also wrapped — Yahoo failure must not prevent portfolio from rendering.
-        if (globalHoldings.Count > 0)
-        {
-            try
-            {
-                var tickers = globalHoldings.Select(h => h.Fund.Ticker).Distinct();
-                var quotes  = await _yahoo.GetBatchQuotesAsync(tickers, ct);
-                foreach (var h in globalHoldings)
-                {
-                    if (quotes.TryGetValue(h.Fund.Ticker, out var q))
-                    {
-                        navMap[h.FundId]      = q.Price;
-                        currencyMap[h.FundId] = q.Currency ?? "USD";
-                    }
-                    else
-                    {
-                        currencyMap[h.FundId] = "USD";
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Yahoo Finance batch quote fetch failed during portfolio load — holdings will show without live NAV");
-                foreach (var h in globalHoldings) currencyMap[h.FundId] = "USD";
-            }
-        }
-
+        // Use FundMeta.LatestNav (stored in DB) instead of live HTTP calls.
+        // NAVs are kept fresh by:
+        //   • EnsureFundAsync — fetches NAV when the fund is first added to the catalogue.
+        //   • NavSyncBackgroundService — runs SyncAllAsync daily at 15:00 UTC.
+        // This makes portfolio load a single DB query with no external dependencies.
         var result = userHoldings.Select(h =>
         {
-            navMap.TryGetValue(h.FundId, out var liveNav);
-            var currency = currencyMap.GetValueOrDefault(h.FundId,
-                h.Fund.Region == Region.INDIA ? "INR" : "USD");
+            var liveNav  = h.Fund.LatestNav;
+            var currency = h.Fund.Region == Region.INDIA ? "INR" : "USD";
 
             decimal? currentValue = liveNav > 0 ? h.Units * liveNav : null;
             decimal? costBasis    = h.AvgCost.HasValue ? h.Units * h.AvgCost.Value : null;

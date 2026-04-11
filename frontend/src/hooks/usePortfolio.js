@@ -16,9 +16,9 @@ export function usePortfolio() {
       const { data } = await api.get('/portfolio');
       return data.holdings;
     },
-    staleTime: 60 * 1000,        // consider fresh for 1 min
-    refetchInterval: 5 * 60 * 1000, // background refresh every 5 min
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000,    // fresh for 5 min — matches backend cache TTL
+    refetchInterval: 10 * 60 * 1000, // background refresh every 10 min
+    refetchOnWindowFocus: false, // NAVs are end-of-day, no need to re-fetch on tab focus
   });
 }
 
