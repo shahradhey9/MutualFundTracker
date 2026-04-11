@@ -19,9 +19,14 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         // ── Database ──────────────────────────────────────────────────────
+        // Render injects the connection string as a postgres:// URL.
+        // Npgsql's DbConnectionStringBuilder expects key=value format, so convert if needed.
+        var rawConn = configuration.GetConnectionString("DefaultConnection") ?? "";
+        var connStr = ConvertPostgresUrl(rawConn);
+
         services.AddDbContext<GwtDbContext>(options =>
             options.UseNpgsql(
-                configuration.GetConnectionString("DefaultConnection"),
+                connStr,
                 npgsql => npgsql.MigrationsAssembly(typeof(GwtDbContext).Assembly.FullName)));
 
         // ── Redis ─────────────────────────────────────────────────────────
@@ -59,5 +64,25 @@ public static class DependencyInjection
         services.AddHostedService<NavSyncBackgroundService>();
 
         return services;
+    }
+
+    // Render (and many PaaS providers) supply PostgreSQL as a URL:
+    //   postgres://user:pass@host:5432/dbname
+    // Npgsql's connection string builder requires key=value pairs, not a URI.
+    // This method converts the URL format to Npgsql key=value format transparently.
+    private static string ConvertPostgresUrl(string connectionString)
+    {
+        if (!connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+            !connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+            return connectionString;
+
+        var uri = new Uri(connectionString);
+        var userInfo = uri.UserInfo.Split(':', 2);
+        var user = Uri.UnescapeDataString(userInfo[0]);
+        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var db   = uri.AbsolutePath.TrimStart('/');
+        var port = uri.Port > 0 ? uri.Port : 5432;
+
+        return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
     }
 }
