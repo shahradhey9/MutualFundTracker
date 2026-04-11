@@ -8,8 +8,11 @@ namespace GWT.Infrastructure.ExternalServices;
 
 /// <summary>
 /// Wraps Yahoo Finance public APIs — no API key required.
-/// Chart endpoint: /v8/finance/chart/{ticker}
-/// Search endpoint: /v1/finance/search?q={query}
+/// Uses query2.finance.yahoo.com with crumb-based auth.
+///
+/// Registered as a singleton so the cookie container (and crumb) survive across
+/// DI-created instances. IHttpClientFactory rotates handlers every 2 minutes by
+/// default, which would lose session cookies — hence the direct HttpClient here.
 /// </summary>
 public class YahooFinanceService : IYahooFinanceService
 {
@@ -17,16 +20,23 @@ public class YahooFinanceService : IYahooFinanceService
     private readonly ICacheService _cache;
     private readonly ILogger<YahooFinanceService> _logger;
 
-    private static readonly TimeSpan QuoteCacheTtl = TimeSpan.FromHours(4);
+    // Crumb is tied to the session cookies in _http's handler.
+    // volatile so reads/writes are not cached in CPU registers across threads.
+    private volatile string? _crumb;
+    private readonly SemaphoreSlim _crumbLock = new(1, 1);
+
+    private static readonly TimeSpan QuoteCacheTtl  = TimeSpan.FromHours(4);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public YahooFinanceService(HttpClient http, ICacheService cache, ILogger<YahooFinanceService> logger)
     {
-        _http = http;
-        _cache = cache;
+        _http   = http;
+        _cache  = cache;
         _logger = logger;
     }
+
+    // ── Search ────────────────────────────────────────────────────────────────
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, CancellationToken ct = default)
     {
@@ -34,7 +44,12 @@ public class YahooFinanceService : IYahooFinanceService
         var cached = await _cache.GetAsync<List<FundSearchResultDto>>(cacheKey, ct);
         if (cached is not null) return cached;
 
-        var url = $"https://query1.finance.yahoo.com/v1/finance/search?q={Uri.EscapeDataString(query)}&quotesCount=20&newsCount=0";
+        var crumb = await EnsureCrumbAsync(ct);
+        var crumbParam = crumb is not null ? $"&crumb={Uri.EscapeDataString(crumb)}" : "";
+        var url = $"https://query2.finance.yahoo.com/v1/finance/search" +
+                  $"?q={Uri.EscapeDataString(query)}&quotesCount=20&newsCount=0" +
+                  $"&enableFuzzyQuery=false&region=US&lang=en-US{crumbParam}";
+
         var json = await SafeGetStringAsync(url, ct);
         if (json is null) return [];
 
@@ -42,41 +57,49 @@ public class YahooFinanceService : IYahooFinanceService
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var quotes = doc.RootElement
-                .GetProperty("finance")
-                .GetProperty("result")[0]
-                .GetProperty("quotes");
+
+            // Robust path: bail early rather than throw on unexpected shape
+            if (!doc.RootElement.TryGetProperty("finance", out var finance)) return results;
+            if (!finance.TryGetProperty("result", out var resultEl)) return results;
+            if (resultEl.ValueKind != JsonValueKind.Array || resultEl.GetArrayLength() == 0) return results;
+            if (!resultEl[0].TryGetProperty("quotes", out var quotes)) return results;
 
             foreach (var q in quotes.EnumerateArray())
             {
-                var type = q.TryGetProperty("quoteType", out var qt) ? qt.GetString() : null;
-                var ticker = q.TryGetProperty("symbol", out var sym) ? sym.GetString() : null;
-                var name = q.TryGetProperty("shortname", out var sn) ? sn.GetString()
-                         : q.TryGetProperty("longname", out var ln) ? ln.GetString() : ticker;
-                var exchange = q.TryGetProperty("exchange", out var ex) ? ex.GetString() : null;
+                var type     = q.TryGetProperty("quoteType", out var qt) ? qt.GetString() : null;
+                var ticker   = q.TryGetProperty("symbol",    out var sym) ? sym.GetString() : null;
+                var name     = q.TryGetProperty("shortname", out var sn)  ? sn.GetString()
+                             : q.TryGetProperty("longname",  out var ln)  ? ln.GetString() : ticker;
+                var exchange = q.TryGetProperty("exchange",  out var ex)  ? ex.GetString() : null;
 
                 if (ticker is null) continue;
 
                 results.Add(new FundSearchResultDto(
-                    Id: $"US-{ticker}",
-                    Region: Region.GLOBAL,
-                    Name: name ?? ticker,
-                    Amc: exchange ?? "Yahoo",
-                    Ticker: ticker,
+                    Id:        $"US-{ticker}",
+                    Region:    Region.GLOBAL,
+                    Name:      name ?? ticker,
+                    Amc:       exchange ?? "Yahoo",
+                    Ticker:    ticker,
                     SchemeCode: null,
-                    Category: type,
+                    Category:  type,
                     LatestNav: null,
-                    NavDate: null));
+                    NavDate:   null));
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to parse Yahoo Finance search response for query '{Query}'", query);
+            // Stale crumb may have caused a non-JSON response — reset so next call re-fetches
+            if (ex is JsonException) _crumb = null;
         }
 
-        await _cache.SetAsync(cacheKey, results, SearchCacheTtl, ct);
+        if (results.Count > 0)
+            await _cache.SetAsync(cacheKey, results, SearchCacheTtl, ct);
+
         return results;
     }
+
+    // ── Quote ─────────────────────────────────────────────────────────────────
 
     public async Task<YahooQuoteDto?> GetQuoteAsync(string ticker, CancellationToken ct = default)
     {
@@ -84,7 +107,11 @@ public class YahooFinanceService : IYahooFinanceService
         var cached = await _cache.GetAsync<YahooQuoteDto>(cacheKey, ct);
         if (cached is not null) return cached;
 
-        var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{Uri.EscapeDataString(ticker)}?interval=1d&range=1d";
+        var crumb = await EnsureCrumbAsync(ct);
+        var crumbParam = crumb is not null ? $"&crumb={Uri.EscapeDataString(crumb)}" : "";
+        var url = $"https://query2.finance.yahoo.com/v8/finance/chart/{Uri.EscapeDataString(ticker)}" +
+                  $"?interval=1d&range=1d{crumbParam}";
+
         var json = await SafeGetStringAsync(url, ct);
         if (json is null) return null;
 
@@ -95,14 +122,14 @@ public class YahooFinanceService : IYahooFinanceService
                 .GetProperty("chart")
                 .GetProperty("result")[0];
 
-            var meta = result.GetProperty("meta");
-            var price = meta.TryGetProperty("regularMarketPrice", out var rmp)
+            var meta   = result.GetProperty("meta");
+            var price  = meta.TryGetProperty("regularMarketPrice", out var rmp)
                 ? rmp.GetDecimal()
                 : meta.GetProperty("chartPreviousClose").GetDecimal();
-            var currency = meta.TryGetProperty("currency", out var cur) ? cur.GetString() : null;
-            var shortName = meta.TryGetProperty("shortName", out var sn) ? sn.GetString() : null;
-            var exchange = meta.TryGetProperty("exchangeName", out var ex) ? ex.GetString() : null;
-            var quoteType = meta.TryGetProperty("instrumentType", out var qt) ? qt.GetString() : null;
+            var currency  = meta.TryGetProperty("currency",       out var cur) ? cur.GetString() : null;
+            var shortName = meta.TryGetProperty("shortName",      out var sn)  ? sn.GetString()  : null;
+            var exchange  = meta.TryGetProperty("exchangeName",   out var exn) ? exn.GetString() : null;
+            var quoteType = meta.TryGetProperty("instrumentType", out var qt)  ? qt.GetString()  : null;
 
             var quote = new YahooQuoteDto(ticker, shortName, exchange, quoteType, price, currency, DateTime.UtcNow);
             await _cache.SetAsync(cacheKey, quote, QuoteCacheTtl, ct);
@@ -111,6 +138,7 @@ public class YahooFinanceService : IYahooFinanceService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to parse Yahoo Finance chart response for ticker '{Ticker}'", ticker);
+            _crumb = null;
             return null;
         }
     }
@@ -119,7 +147,7 @@ public class YahooFinanceService : IYahooFinanceService
         IEnumerable<string> tickers, CancellationToken ct = default)
     {
         var tickerList = tickers.Distinct().ToList();
-        var result = new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
+        var result     = new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
 
         var tasks = tickerList.Select(async ticker =>
         {
@@ -131,6 +159,58 @@ public class YahooFinanceService : IYahooFinanceService
         await Task.WhenAll(tasks);
         return result;
     }
+
+    // ── Crumb / session ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Obtains a Yahoo Finance crumb token.
+    /// Step 1: GET https://fc.yahoo.com  — sets session cookies in the shared handler.
+    /// Step 2: GET /v1/test/getcrumb     — returns the crumb string.
+    /// The crumb must be sent with every subsequent data request as &crumb=…
+    /// </summary>
+    private async Task<string?> EnsureCrumbAsync(CancellationToken ct)
+    {
+        if (_crumb is not null) return _crumb;
+
+        await _crumbLock.WaitAsync(ct);
+        try
+        {
+            if (_crumb is not null) return _crumb;
+
+            // Warm up session cookies
+            try { await _http.GetAsync("https://fc.yahoo.com", ct); } catch { /* best-effort */ }
+
+            using var response = await _http.GetAsync(
+                "https://query2.finance.yahoo.com/v1/test/getcrumb", ct);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var crumb = (await response.Content.ReadAsStringAsync(ct)).Trim();
+                if (!string.IsNullOrWhiteSpace(crumb) && !crumb.StartsWith("<"))
+                {
+                    _crumb = crumb;
+                    _logger.LogInformation("Yahoo Finance crumb obtained");
+                    return _crumb;
+                }
+            }
+
+            _logger.LogWarning(
+                "Could not obtain Yahoo Finance crumb (HTTP {Status}) — proceeding without",
+                (int)response.StatusCode);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception while fetching Yahoo Finance crumb");
+            return null;
+        }
+        finally
+        {
+            _crumbLock.Release();
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private async Task<string?> SafeGetStringAsync(string url, CancellationToken ct)
     {

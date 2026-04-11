@@ -8,6 +8,7 @@ using GWT.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace GWT.Infrastructure;
@@ -38,7 +39,9 @@ public static class DependencyInjection
         redisConfig.AbortOnConnectFail = false;
         services.AddSingleton<IConnectionMultiplexer>(
             ConnectionMultiplexer.Connect(redisConfig));
-        services.AddScoped<ICacheService, RedisCacheService>();
+        // Singleton because YahooFinanceService (also singleton) depends on it,
+        // and Redis operations are inherently thread-safe.
+        services.AddSingleton<ICacheService, RedisCacheService>();
 
         // ── Repositories ──────────────────────────────────────────────────
         services.AddScoped<IUserRepository, UserRepository>();
@@ -53,12 +56,33 @@ public static class DependencyInjection
             client.DefaultRequestHeaders.Add("User-Agent", "GWT/1.0 (wealth-tracker)");
         });
 
-        services.AddHttpClient<IYahooFinanceService, YahooFinanceService>(client =>
+        // Yahoo Finance requires crumb-based auth — the crumb is tied to session cookies.
+        // IHttpClientFactory rotates the underlying handler every 2 min by default, which
+        // would lose cookies and invalidate the crumb. We therefore create a long-lived
+        // HttpClient with its own CookieContainer and register the service as a singleton.
         {
-            client.Timeout = TimeSpan.FromSeconds(15);
-            client.DefaultRequestHeaders.Add("User-Agent",
-                "Mozilla/5.0 (compatible; GWT/1.0)");
-        });
+            var cookieContainer = new System.Net.CookieContainer();
+            var handler = new System.Net.Http.HttpClientHandler
+            {
+                CookieContainer  = cookieContainer,
+                UseCookies       = true,
+                AllowAutoRedirect = true,
+            };
+            var yahooClient = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(20),
+            };
+            yahooClient.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            yahooClient.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, */*");
+            yahooClient.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+
+            services.AddSingleton<IYahooFinanceService>(sp => new YahooFinanceService(
+                yahooClient,
+                sp.GetRequiredService<ICacheService>(),
+                sp.GetRequiredService<ILogger<YahooFinanceService>>()));
+        }
 
         services.AddHttpClient<IFxService, FrankfurterFxService>(client =>
         {
