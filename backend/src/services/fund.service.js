@@ -1,7 +1,23 @@
 import { prisma } from '../lib/prisma.js';
 import { searchAmfi, getAmfiNav } from './amfi.service.js';
 import { searchYahoo, getYahooQuote } from './yahoo.service.js';
+import { cacheGet, cacheSet, TTL } from '../lib/redis.js';
 import { logger } from '../lib/logger.js';
+import axios from 'axios';
+
+// In-memory fallback for enriched search results (used when Redis is unavailable)
+const _enrichedMem = new Map(); // key -> { data, expiry }
+
+function memGet(key) {
+  const entry = _enrichedMem.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiry) { _enrichedMem.delete(key); return null; }
+  return entry.data;
+}
+
+function memSet(key, data, ttlSeconds) {
+  _enrichedMem.set(key, { data, expiry: Date.now() + ttlSeconds * 1000 });
+}
 
 // Search funds — routes to correct data source by region
 export async function searchFunds(query, region) {
@@ -22,19 +38,59 @@ export async function searchFunds(query, region) {
   }
 
   if (region === 'GLOBAL') {
+    // Check enriched cache (search + quotes combined) to avoid 10 Yahoo API calls per search
+    const enrichedKey = `yf:search-enriched:${query.toLowerCase()}`;
+    const memCached = memGet(enrichedKey);
+    if (memCached) return memCached;
+    const redisCached = await cacheGet(enrichedKey);
+    if (redisCached) { memSet(enrichedKey, redisCached, TTL.SEARCH_ENRICHED); return redisCached; }
+
     const results = await searchYahoo(query);
-    // Fetch prices for top 10 results in parallel (don't slow down search)
+    if (!results || results.length === 0) {
+      return [];
+    }
+
     const top10 = results.slice(0, 10);
-    const pricePromises = top10.map(f =>
-      getYahooQuote(f.ticker).catch(() => null)
-    );
-    const prices = await Promise.all(pricePromises);
-    return top10.map((f, i) => ({
-      ...f,
-      latestNav: prices[i]?.price ?? null,
-      currency: prices[i]?.currency ?? 'USD',
-      navDate: prices[i]?.navDate ?? null,
+    const tickers = top10.map(f => f.ticker);
+    const quotes = {};
+
+    if (tickers.length > 0) {
+      try {
+        // --- BATCH FETCH QUOTES ---
+        // Use Yahoo's v7 batch quote endpoint to get all prices in a single network request.
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${tickers.join(',')}`;
+        const { data } = await axios.get(url, {
+          timeout: 10000,
+          headers: { 'User-Agent': 'GlobalWealthTracker/1.0' },
+        });
+
+        if (data?.quoteResponse?.result) {
+          for (const quote of data.quoteResponse.result) {
+            quotes[quote.symbol] = {
+              price: quote.regularMarketPrice,
+              currency: quote.currency,
+              // Yahoo provides time as a unix epoch timestamp (seconds)
+              navDate: quote.regularMarketTime ? new Date(quote.regularMarketTime * 1000) : null,
+            };
+          }
+        }
+      } catch (error) {
+        logger.warn(`Yahoo batch quote fetch failed for query "${query}": ${error.message}`);
+        // Proceed without prices if batch fetch fails; the UI can handle null NAVs.
+      }
+    }
+
+    const enriched = top10.map(fund => ({
+      ...fund,
+      latestNav: quotes[fund.ticker]?.price ?? null,
+      currency: quotes[fund.ticker]?.currency ?? 'USD',
+      navDate: quotes[fund.ticker]?.navDate ? quotes[fund.ticker].navDate.toISOString() : null,
     }));
+
+    // Cache enriched results so repeat searches skip the 10 quote API calls
+    memSet(enrichedKey, enriched, TTL.SEARCH_ENRICHED);
+    await cacheSet(enrichedKey, enriched, TTL.SEARCH_ENRICHED);
+    return enriched;
   }
 
   throw new Error('Invalid region. Must be INDIA or GLOBAL');

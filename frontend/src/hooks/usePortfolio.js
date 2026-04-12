@@ -69,14 +69,14 @@ export function useDeleteHolding() {
 export function useFundSearch(query, region) {
   return useQuery({
     queryKey: keys.fundSearch(query, region),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data } = await api.get('/funds/search', {
         params: { q: query, region },
+        signal, // cancels the in-flight request if a new query fires before this one completes
       });
       return data.results;
     },
     enabled: query.trim().length >= 2,
     staleTime: 10 * 60 * 1000, // search results stable for 10 min
-    placeholderData: (prev) => prev, // keep old results while new ones load
   });
 }

@@ -1,16 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useFundSearch } from '../hooks/usePortfolio.js';
 import { useUIStore } from '../lib/store.js';
 import { fmtCurrency } from '../lib/format.js';
-
-function useDebounce(value, delay = 350) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
 
 const REGIONS = [
   { value: 'INDIA',  label: 'India',  sub: 'AMFI — 4,000+ Direct Growth funds' },
@@ -25,14 +16,33 @@ export function FundSearch() {
     clearSearch,
   } = useUIStore();
 
-  const debouncedQuery = useDebounce(searchQuery);
-  const { data: results, isFetching, isError, error } = useFundSearch(debouncedQuery, searchRegion);
+  // committedQuery drives the actual API call — only updates on Search button / Enter
+  const [committedQuery, setCommittedQuery] = useState('');
+  const inputRef = useRef(null);
+
+  const { data: results, isFetching, isError, error } = useFundSearch(committedQuery, searchRegion);
+
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim();
+    if (q.length >= 2) setCommittedQuery(q);
+  }, [searchQuery]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') handleSearch();
+  }, [handleSearch]);
 
   const handleRegionChange = useCallback((region) => {
     setSearchRegion(region);
     setSelectedFund(null);
     clearSearch();
+    setCommittedQuery('');
   }, [setSearchRegion, setSelectedFund, clearSearch]);
+
+  const handleClear = useCallback(() => {
+    clearSearch();
+    setCommittedQuery('');
+    inputRef.current?.focus();
+  }, [clearSearch]);
 
   return (
     <div>
@@ -77,9 +87,10 @@ export function FundSearch() {
         })}
       </div>
 
-      {/* Search input */}
+      {/* Search input + button */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <input
+          ref={inputRef}
           style={{
             flex: 1,
             padding: '9px 14px',
@@ -93,6 +104,7 @@ export function FundSearch() {
           type="text"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={
             searchRegion === 'INDIA'
               ? 'Search by fund name or AMC — e.g. "Parag Parikh" or "HDFC Mid"'
@@ -100,17 +112,37 @@ export function FundSearch() {
           }
           autoFocus
         />
-        {searchQuery && (
+        <button
+          onClick={handleSearch}
+          disabled={searchQuery.trim().length < 2 || isFetching}
+          style={{
+            padding: '9px 18px',
+            fontSize: 13,
+            fontWeight: 500,
+            border: '0.5px solid var(--color-text-primary)',
+            borderRadius: 'var(--border-radius-md)',
+            background: 'var(--color-text-primary)',
+            color: 'var(--color-background-primary)',
+            cursor: searchQuery.trim().length < 2 || isFetching ? 'not-allowed' : 'pointer',
+            opacity: searchQuery.trim().length < 2 || isFetching ? 0.4 : 1,
+            transition: 'opacity 0.15s',
+            flexShrink: 0,
+          }}
+        >
+          {isFetching ? 'Searching…' : 'Search'}
+        </button>
+        {(searchQuery || committedQuery) && (
           <button
-            onClick={clearSearch}
+            onClick={handleClear}
             style={{
-              padding: '8px 16px',
+              padding: '8px 14px',
               fontSize: 13,
               border: '0.5px solid var(--color-border-secondary)',
               borderRadius: 'var(--border-radius-md)',
               background: 'none',
               color: 'var(--color-text-secondary)',
               cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
             ✕
@@ -119,7 +151,7 @@ export function FundSearch() {
       </div>
 
       {/* Results */}
-      {debouncedQuery.length >= 2 && (
+      {committedQuery.length >= 2 && (
         <div>
           {isFetching && (
             <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>
@@ -133,7 +165,7 @@ export function FundSearch() {
           )}
           {!isFetching && results?.length === 0 && (
             <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)', padding: '14px', border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-md)' }}>
-              No results for "{debouncedQuery}" in {searchRegion === 'INDIA' ? 'AMFI' : 'Yahoo Finance'}.
+              No results for "{committedQuery}" in {searchRegion === 'INDIA' ? 'AMFI' : 'Yahoo Finance'}.
             </div>
           )}
           {results?.length > 0 && (
@@ -192,9 +224,9 @@ export function FundSearch() {
         </div>
       )}
 
-      {debouncedQuery.length < 2 && (
+      {committedQuery.length < 2 && (
         <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', lineHeight: 1.8, border: '0.5px solid var(--color-border-tertiary)', borderRadius: 'var(--border-radius-md)', padding: '14px 16px' }}>
-          ℹ Type at least 2 characters to search<br />
+          ℹ Type at least 2 characters and press Search or Enter<br />
           ℹ Partial words work — try "parag", "mid cap", "hdfc flexi"
         </div>
       )}

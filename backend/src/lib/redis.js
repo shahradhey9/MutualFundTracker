@@ -22,9 +22,10 @@ export function getRedis() {
 
 // TTLs in seconds
 export const TTL = {
-  NAV: 4 * 60 * 60,       // 4 hours — NAV only updates once a day
-  SEARCH: 24 * 60 * 60,   // 24 hours — fund catalogue is stable
-  PORTFOLIO: 60,           // 1 minute — user-specific, short TTL
+  NAV: 4 * 60 * 60,              // 4 hours — NAV only updates once a day
+  SEARCH: 24 * 60 * 60,          // 24 hours — fund catalogue is stable
+  SEARCH_ENRICHED: 4 * 60 * 60,  // 4 hours — enriched results include NAV prices
+  PORTFOLIO: 60,                  // 1 minute — user-specific, short TTL
 };
 
 export async function cacheGet(key) {
