@@ -12,14 +12,20 @@ namespace GWT.Infrastructure.Jobs;
 public class NavSyncBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IYahooFinanceService _yahoo;
     private readonly ILogger<NavSyncBackgroundService> _logger;
 
     // Daily sync at 15:00 UTC
     private static readonly TimeOnly SyncTime = new(15, 0, 0);
 
-    public NavSyncBackgroundService(IServiceScopeFactory scopeFactory, ILogger<NavSyncBackgroundService> logger)
+    // IYahooFinanceService is a singleton — inject directly so we can warm up its crumb.
+    public NavSyncBackgroundService(
+        IServiceScopeFactory scopeFactory,
+        IYahooFinanceService yahoo,
+        ILogger<NavSyncBackgroundService> logger)
     {
         _scopeFactory = scopeFactory;
+        _yahoo = yahoo;
         _logger = logger;
     }
 
@@ -27,23 +33,24 @@ public class NavSyncBackgroundService : BackgroundService
     {
         _logger.LogInformation("NAV sync background service started. Scheduled daily at {Time} UTC.", SyncTime);
 
-        // Warm up the AMFI static cache at startup so the first user search is fast.
-        // Run in background — don't block the app from starting; failures are non-fatal.
+        // Warm up caches at startup so the first user request is fast.
+        // Both tasks run in parallel and are non-fatal if they fail.
         _ = Task.Run(async () =>
         {
             try
             {
                 // Give the rest of the application a moment to finish initialising.
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                using var scope = _scopeFactory.CreateScope();
-                var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
-                await amfi.FetchAllNavsAsync(stoppingToken);
-                _logger.LogInformation("AMFI warm-up complete — NAVAll.txt cached in memory.");
+
+                // Run AMFI and Yahoo warm-ups in parallel.
+                var amfiTask = WarmUpAmfiAsync(stoppingToken);
+                var yahooTask = WarmUpYahooAsync(stoppingToken);
+                await Task.WhenAll(amfiTask, yahooTask);
             }
             catch (OperationCanceledException) { /* shutting down */ }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "AMFI warm-up failed — first search will be slower.");
+                _logger.LogWarning(ex, "Warm-up task encountered an error.");
             }
         }, stoppingToken);
 
@@ -67,6 +74,36 @@ public class NavSyncBackgroundService : BackgroundService
                 // Back off for 5 minutes before retrying
                 await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
             }
+        }
+    }
+
+    private async Task WarmUpAmfiAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+            await amfi.FetchAllNavsAsync(ct);
+            _logger.LogInformation("AMFI warm-up complete — NAVAll.txt cached in memory.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AMFI warm-up failed — first India search will be slower.");
+        }
+    }
+
+    private async Task WarmUpYahooAsync(CancellationToken ct)
+    {
+        try
+        {
+            // A lightweight search is enough to trigger EnsureCrumbAsync inside the service.
+            // The crumb is then cached in the singleton for all subsequent Yahoo calls.
+            await _yahoo.SearchAsync("vanguard", ct);
+            _logger.LogInformation("Yahoo Finance warm-up complete — crumb cached.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Yahoo Finance warm-up failed — first Global search will be slower.");
         }
     }
 

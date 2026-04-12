@@ -25,6 +25,13 @@ public class YahooFinanceService : IYahooFinanceService
     private volatile string? _crumb;
     private readonly SemaphoreSlim _crumbLock = new(1, 1);
 
+    // In-memory search cache — Redis is unavailable on Render free tier so every
+    // _cache.GetAsync call is a miss. Caching here avoids a Yahoo HTTP round-trip for
+    // repeated searches (e.g. typing one character at a time).
+    private readonly Dictionary<string, (List<FundSearchResultDto> Results, DateTime Expiry)> _searchMem
+        = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _searchMemLock = new(1, 1);
+
     private static readonly TimeSpan QuoteCacheTtl  = TimeSpan.FromHours(4);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
@@ -41,8 +48,19 @@ public class YahooFinanceService : IYahooFinanceService
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, CancellationToken ct = default)
     {
         var cacheKey = $"yahoo:search:{query.ToLowerInvariant()}";
+
+        // 1. In-memory cache (fastest — no I/O)
+        var memKey = query.ToLowerInvariant();
+        if (_searchMem.TryGetValue(memKey, out var memEntry) && DateTime.UtcNow < memEntry.Expiry)
+            return memEntry.Results;
+
+        // 2. Redis / distributed cache (no-op on Render free tier)
         var cached = await _cache.GetAsync<List<FundSearchResultDto>>(cacheKey, ct);
-        if (cached is not null) return cached;
+        if (cached is not null)
+        {
+            _searchMem[memKey] = (cached, DateTime.UtcNow.Add(SearchCacheTtl));
+            return cached;
+        }
 
         var crumb = await EnsureCrumbAsync(ct);
         var crumbParam = crumb is not null ? $"&crumb={Uri.EscapeDataString(crumb)}" : "";
@@ -116,7 +134,10 @@ public class YahooFinanceService : IYahooFinanceService
         }
 
         if (results.Count > 0)
+        {
+            _searchMem[memKey] = (results, DateTime.UtcNow.Add(SearchCacheTtl));
             await _cache.SetAsync(cacheKey, results, SearchCacheTtl, ct);
+        }
 
         return results;
     }
