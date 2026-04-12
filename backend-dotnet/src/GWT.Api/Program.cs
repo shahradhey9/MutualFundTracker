@@ -1,6 +1,7 @@
 using System.Text;
 using GWT.Api.Middleware;
 using GWT.Application;
+using GWT.Application.Interfaces.Services;
 using GWT.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -161,17 +162,39 @@ await app.StartAsync();
 
 _ = Task.Run(async () =>
 {
-    try
+    using var scope = app.Services.CreateScope();
+
+    // Run migrations and AMFI cache warm-up in parallel so the first India search
+    // is served from memory instead of fetching the 2 MB NAVAll.txt on demand.
+    var dbTask = Task.Run(async () =>
     {
-        using var scope = app.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
-        await db.Database.MigrateAsync();
-        Log.Information("Database migrations applied successfully.");
-    }
-    catch (Exception ex)
+        try
+        {
+            var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+            await db.Database.MigrateAsync();
+            Log.Information("Database migrations applied successfully.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Database migration failed on startup");
+        }
+    });
+
+    var amfiTask = Task.Run(async () =>
     {
-        Log.Error(ex, "Database migration failed on startup");
-    }
+        try
+        {
+            var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+            var funds = await amfi.FetchAllNavsAsync();
+            Log.Information("AMFI warm-up complete: {Count} Growth plan entries cached.", funds.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "AMFI warm-up failed — first search will fetch on demand.");
+        }
+    });
+
+    await Task.WhenAll(dbTask, amfiTask);
 });
 
 await app.WaitForShutdownAsync();
