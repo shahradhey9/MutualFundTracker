@@ -194,7 +194,22 @@ _ = Task.Run(async () =>
         }
     });
 
-    await Task.WhenAll(dbTask, amfiTask);
+    // Warm up Yahoo Finance session cookie + crumb so the first Global search
+    // doesn't pay the 2-step handshake latency (fc.yahoo.com → getcrumb).
+    var yahooTask = Task.Run(async () =>
+    {
+        try
+        {
+            var yahoo = scope.ServiceProvider.GetRequiredService<IYahooFinanceService>();
+            await yahoo.WarmUpAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Yahoo Finance warm-up failed — crumb will be fetched on first request.");
+        }
+    });
+
+    await Task.WhenAll(dbTask, amfiTask, yahooTask);
 });
 
 await app.WaitForShutdownAsync();

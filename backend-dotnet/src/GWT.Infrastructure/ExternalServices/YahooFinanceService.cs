@@ -43,6 +43,21 @@ public class YahooFinanceService : IYahooFinanceService
         _logger = logger;
     }
 
+    // ── Warm-up ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called at startup to establish the Yahoo Finance session cookie and crumb so
+    /// the first real search/quote request doesn't pay the crumb-handshake latency.
+    /// </summary>
+    public async Task WarmUpAsync(CancellationToken ct = default)
+    {
+        var crumb = await EnsureCrumbAsync(ct);
+        _logger.LogInformation(
+            crumb is not null
+                ? "Yahoo Finance warm-up complete (crumb acquired)."
+                : "Yahoo Finance warm-up: crumb unavailable — will retry on first request.");
+    }
+
     // ── Search ────────────────────────────────────────────────────────────────
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, CancellationToken ct = default)
