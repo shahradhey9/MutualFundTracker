@@ -5,6 +5,7 @@ import { useUIStore } from './lib/store.js';
 import { useAuth } from './hooks/useAuth.js';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { LoadingSpinner } from './components/LoadingSpinner.jsx';
+import { LoadingOverlay } from './components/LoadingOverlay.jsx';
 import { LoginPage } from './pages/LoginPage.jsx';
 import { PortfolioPage } from './pages/PortfolioPage.jsx';
 import { AddHoldingPage } from './pages/AddHoldingPage.jsx';
@@ -155,6 +156,7 @@ function Shell() {
   if (!user)   return <LoginPage />;
   return (
     <>
+      <LoadingOverlay />
       <style>{`
         .app-root{display:flex;min-height:100vh;background:#f7f7f5;font-family:var(--font-sans,'DM Sans',system-ui)}
         @media(prefers-color-scheme:dark){.app-root{background:#141413}.main-col{background:#141413!important}.page-wrap{background:#141413!important}}

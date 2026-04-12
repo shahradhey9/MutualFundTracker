@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { RegionBadge, GainPill } from './Badges.jsx';
 import { fmtCurrency, fmtUnits, fmtDate } from '../lib/format.js';
 import { useDeleteHolding } from '../hooks/usePortfolio.js';
@@ -29,6 +29,13 @@ export function HoldingsTable({ holdings }) {
   const { mutate: deleteHolding, isPending: deleting } = useDeleteHolding();
   const setEditingHolding = useUIStore(s => s.setEditingHolding);
   const setActiveTab = useUIStore(s => s.setActiveTab);
+  const setOverlayMessage = useUIStore(s => s.setOverlayMessage);
+  const clearOverlayMessage = useUIStore(s => s.clearOverlayMessage);
+
+  useEffect(() => {
+    if (deleting) setOverlayMessage('Removing holding…');
+    else clearOverlayMessage();
+  }, [deleting]);
 
   if (!holdings?.length) {
     return (

@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
+import { useUIStore } from '../lib/store.js';
 import { parseCSV, SAMPLE_CSV } from '../lib/csvParser.js';
 import { rankMatches, confidence } from '../lib/fuzzyMatch.js';
 
@@ -293,6 +294,13 @@ function ReviewStep({ parsed, onImport, onBack }) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const qc = useQueryClient();
+  const setOverlayMessage = useUIStore(s => s.setOverlayMessage);
+  const clearOverlayMessage = useUIStore(s => s.clearOverlayMessage);
+
+  useEffect(() => {
+    if (importing) setOverlayMessage('Importing holdings…');
+    else clearOverlayMessage();
+  }, [importing]);
 
   const updateRow = useCallback((index, updates) => {
     setRows(prev => prev.map((r, i) => i === index ? { ...r, ...updates } : r));

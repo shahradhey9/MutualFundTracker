@@ -25,7 +25,12 @@ const input = {
 };
 
 export function AddHoldingForm() {
-  const { selectedFund, clearSelectedFund, editingHolding, clearEditingHolding, clearSearch, setActiveTab } = useUIStore();
+  const {
+    selectedFund, clearSelectedFund,
+    editingHolding, clearEditingHolding,
+    clearSearch, setActiveTab,
+    setOverlayMessage, clearOverlayMessage,
+  } = useUIStore();
   const { mutate: addHolding, isPending: adding, isError: addError, error: addErr } = useAddHolding();
   const { mutate: updateHolding, isPending: updating } = useUpdateHolding();
 
@@ -45,6 +50,13 @@ export function AddHoldingForm() {
       setPurchaseAt(editingHolding.purchaseAt?.split('T')[0] || new Date().toISOString().split('T')[0]);
     }
   }, [editingHolding]);
+
+  // Show/hide global loading overlay
+  useEffect(() => {
+    if (adding) setOverlayMessage('Adding holding…');
+    else if (updating) setOverlayMessage('Updating holding…');
+    else clearOverlayMessage();
+  }, [adding, updating]);
 
   if (!fund && !isEditing) return null;
 

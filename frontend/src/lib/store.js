@@ -30,4 +30,9 @@ export const useUIStore = create((set) => ({
   searchRegion: 'INDIA',
   setSearchRegion: (r) => set({ searchRegion: r }),
   clearSearch: () => set({ searchQuery: '', selectedFund: null }),
+
+  // Full-screen loading overlay
+  overlayMessage: null,
+  setOverlayMessage: (msg) => set({ overlayMessage: msg }),
+  clearOverlayMessage: () => set({ overlayMessage: null }),
 }));
