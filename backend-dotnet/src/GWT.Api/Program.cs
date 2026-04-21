@@ -164,29 +164,29 @@ _ = Task.Run(async () =>
 {
     using var scope = app.Services.CreateScope();
 
-    // Run migrations and AMFI cache warm-up in parallel so the first India search
-    // is served from memory instead of fetching the 2 MB NAVAll.txt on demand.
-    var dbTask = Task.Run(async () =>
+    // ── Step 1: Run DB migrations (must complete before fund import) ───────────────
+    try
     {
-        try
-        {
-            var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
-            await db.Database.MigrateAsync();
-            Log.Information("Database migrations applied successfully.");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Database migration failed on startup");
-        }
-    });
+        var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+        await db.Database.MigrateAsync();
+        Log.Information("Database migrations applied successfully.");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Database migration failed on startup");
+        return; // Don't attempt DB writes if migrations failed
+    }
+
+    // ── Step 2: AMFI warm-up + Yahoo crumb in parallel ────────────────────────────
+    List<GWT.Application.DTOs.Funds.AmfiFundRawDto>? amfiFunds = null;
 
     var amfiTask = Task.Run(async () =>
     {
         try
         {
             var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
-            var funds = await amfi.FetchAllNavsAsync();
-            Log.Information("AMFI warm-up complete: {Count} Growth plan entries cached.", funds.Count);
+            amfiFunds = await amfi.FetchAllNavsAsync();
+            Log.Information("AMFI warm-up complete: {Count} Growth plan entries cached.", amfiFunds.Count);
         }
         catch (Exception ex)
         {
@@ -194,8 +194,6 @@ _ = Task.Run(async () =>
         }
     });
 
-    // Warm up Yahoo Finance session cookie + crumb so the first Global search
-    // doesn't pay the 2-step handshake latency (fc.yahoo.com → getcrumb).
     var yahooTask = Task.Run(async () =>
     {
         try
@@ -209,7 +207,40 @@ _ = Task.Run(async () =>
         }
     });
 
-    await Task.WhenAll(dbTask, amfiTask, yahooTask);
+    await Task.WhenAll(amfiTask, yahooTask);
+
+    // ── Step 3: Bulk-import ALL AMFI India funds into fund_meta ───────────────────
+    // This ensures every Indian mutual fund is searchable from the DB with today's NAV,
+    // enabling DB-first search without hitting the AMFI API on every query.
+    if (amfiFunds is { Count: > 0 })
+    {
+        try
+        {
+            var repo = scope.ServiceProvider
+                .GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
+
+            var fundEntities = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta
+            {
+                Id        = $"IN-{f.SchemeCode}",
+                Region    = GWT.Domain.Enums.Region.INDIA,
+                Name      = f.SchemeName,
+                Amc       = f.Amc,
+                Ticker    = $"AMFI-{f.SchemeCode}",
+                SchemeCode = f.SchemeCode,
+                Isin      = f.Isin,
+                LatestNav = f.Nav,
+                NavDate   = f.NavDate,
+                UpdatedAt = DateTime.UtcNow,
+            });
+
+            await repo.BulkUpsertFundsAsync(fundEntities);
+            Log.Information("AMFI bulk import complete: {Count} India funds upserted into fund_meta.", amfiFunds.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "AMFI bulk import failed — India funds will be inserted on demand.");
+        }
+    }
 });
 
 await app.WaitForShutdownAsync();

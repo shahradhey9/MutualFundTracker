@@ -26,10 +26,82 @@ public class FundService : IFundService
         _logger = logger;
     }
 
-    public Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default) =>
-        region == Region.INDIA
-            ? _amfi.SearchAsync(query, ct)
-            : _yahoo.SearchAsync(query, ct);
+    public async Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default)
+    {
+        var today = DateTime.UtcNow.Date;
+
+        if (region == Region.INDIA)
+        {
+            // DB-first: after startup bulk import all India funds are in fund_meta with today's NAV.
+            // If the DB has fresh results for this query return them directly without hitting AMFI.
+            var dbResults = await _funds.SearchAsync(query, Region.INDIA, ct: ct);
+            var freshResults = dbResults
+                .Where(f => f.NavDate.HasValue && f.NavDate.Value.Date >= today)
+                .ToList();
+
+            if (freshResults.Count > 0)
+            {
+                _logger.LogDebug("India search '{Query}' served from fund_meta ({Count} results)", query, freshResults.Count);
+                return freshResults.Select(ToSearchResultDto).ToList();
+            }
+
+            // Fallback: AMFI in-memory cache (always available after warm-up).
+            // This path runs on first startup before the bulk import completes,
+            // or for edge-case funds not yet imported.
+            _logger.LogDebug("India search '{Query}' falling back to AMFI API", query);
+            return await _amfi.SearchAsync(query, ct);
+        }
+        else
+        {
+            // DB-first for Global: if we have matching funds already cached in fund_meta, return
+            // them without a Yahoo round-trip. NAV may be null from search results but that's OK —
+            // AddHoldingForm fetches NAV separately via /funds/nav/{ticker}.
+            var dbResults = await _funds.SearchAsync(query, Region.GLOBAL, ct: ct);
+            if (dbResults.Count > 0)
+            {
+                _logger.LogDebug("Global search '{Query}' served from fund_meta ({Count} results)", query, dbResults.Count);
+                return dbResults.Select(ToSearchResultDto).ToList();
+            }
+
+            // Fallback to Yahoo; persist the returned funds so future searches hit the DB.
+            _logger.LogDebug("Global search '{Query}' falling back to Yahoo Finance", query);
+            var yahooResults = await _yahoo.SearchAsync(query, ct);
+
+            if (yahooResults.Count > 0)
+                await PersistGlobalSearchResultsAsync(yahooResults, ct);
+
+            return yahooResults;
+        }
+    }
+
+    private async Task PersistGlobalSearchResultsAsync(List<FundSearchResultDto> results, CancellationToken ct)
+    {
+        var funds = results.Select(r => new FundMeta
+        {
+            Id        = r.Id,
+            Region    = Region.GLOBAL,
+            Name      = r.Name,
+            Amc       = r.Amc,
+            Ticker    = r.Ticker,
+            Category  = r.Category,
+            UpdatedAt = DateTime.UtcNow,
+            // LatestNav and NavDate intentionally omitted —
+            // Yahoo search results don't include price; NAV is fetched on demand.
+        });
+
+        try
+        {
+            await _funds.BulkUpsertFundsAsync(funds, ct);
+            _logger.LogDebug("Persisted {Count} global search results to fund_meta", results.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist global search results to fund_meta — non-fatal");
+        }
+    }
+
+    private static FundSearchResultDto ToSearchResultDto(FundMeta f) =>
+        new(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, f.LatestNav, f.NavDate);
 
     public async Task<FundNavDto> GetNavAsync(string ticker, Region region, CancellationToken ct = default)
     {
