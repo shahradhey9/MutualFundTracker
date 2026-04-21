@@ -10,20 +10,26 @@ namespace GWT.Application.Services;
 public class PortfolioService : IPortfolioService
 {
     private readonly IHoldingRepository _holdings;
+    private readonly IFundMetaRepository _funds;
+    private readonly IYahooFinanceService _yahoo;
     private readonly ICacheService _cache;
     private readonly ILogger<PortfolioService> _logger;
 
-    // Portfolio is assembled from stored FundMeta.LatestNav — no live HTTP calls.
-    // NAVs are refreshed daily by NavSyncBackgroundService and on first add by EnsureFundAsync.
-    // Cache TTL of 5 min avoids redundant DB queries on repeated page loads.
+    // Portfolio is assembled from stored FundMeta.LatestNav, refreshed on demand for
+    // stale global holdings. NAVs are also kept fresh by NavSyncBackgroundService (daily at
+    // 15:00 UTC), but on the Render free tier the process may be asleep at that time.
     private static readonly TimeSpan PortfolioCacheTtl = TimeSpan.FromMinutes(5);
 
     public PortfolioService(
         IHoldingRepository holdings,
+        IFundMetaRepository funds,
+        IYahooFinanceService yahoo,
         ICacheService cache,
         ILogger<PortfolioService> logger)
     {
         _holdings = holdings;
+        _funds = funds;
+        _yahoo = yahoo;
         _cache = cache;
         _logger = logger;
     }
@@ -37,17 +43,61 @@ public class PortfolioService : IPortfolioService
         var userHoldings = await _holdings.GetByUserAsync(userId, ct);
         if (userHoldings.Count == 0) return [];
 
-        // Use FundMeta.LatestNav (stored in DB) instead of live HTTP calls.
-        // NAVs are kept fresh by:
-        //   • EnsureFundAsync — fetches NAV when the fund is first added to the catalogue.
-        //   • NavSyncBackgroundService — runs SyncAllAsync daily at 15:00 UTC.
-        // This makes portfolio load a single DB query with no external dependencies.
+        // For global holdings whose stored NAV is from a previous day, fetch live prices
+        // from Yahoo Finance so the portfolio always shows today's market value.
+        var today = DateTime.UtcNow.Date;
+        var staleGlobal = userHoldings
+            .Where(h => h.Fund.Region == Region.GLOBAL &&
+                        (h.Fund.NavDate is null || h.Fund.NavDate.Value.Date < today))
+            .ToList();
+
+        // liveNav overrides: ticker → live price (only populated when Yahoo call succeeds)
+        var liveNav = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        if (staleGlobal.Count > 0)
+        {
+            try
+            {
+                var tickers = staleGlobal.Select(h => h.Fund.Ticker).Distinct();
+                var quotes = await _yahoo.GetBatchQuotesAsync(tickers, ct);
+
+                foreach (var (ticker, q) in quotes)
+                    liveNav[ticker] = q.Price;
+
+                // Persist fresh NAVs so subsequent loads don't need another Yahoo round-trip
+                var tickerToFundId = staleGlobal.ToDictionary(h => h.Fund.Ticker, h => h.Fund.Id);
+                var updates = quotes
+                    .Where(kvp => tickerToFundId.ContainsKey(kvp.Key))
+                    .Select(kvp => (
+                        FundId: tickerToFundId[kvp.Key],
+                        Nav:    kvp.Value.Price,
+                        NavDate: kvp.Value.Timestamp))
+                    .ToList();
+
+                if (updates.Count > 0)
+                    await _funds.UpdateNavBatchAsync(updates, ct);
+
+                _logger.LogInformation(
+                    "Portfolio: live NAV refresh for {Count} stale global holding(s), user {UserId}",
+                    updates.Count, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Portfolio: live NAV refresh failed — falling back to stored NAV for user {UserId}", userId);
+            }
+        }
+
         var result = userHoldings.Select(h =>
         {
-            var liveNav  = h.Fund.LatestNav;
+            // Prefer the freshly-fetched price; fall back to what is stored in DB
+            var nav = h.Fund.Region == Region.GLOBAL && liveNav.TryGetValue(h.Fund.Ticker, out var p)
+                ? (decimal?)p
+                : h.Fund.LatestNav;
+
             var currency = h.Fund.Region == Region.INDIA ? "INR" : "USD";
 
-            decimal? currentValue = liveNav > 0 ? h.Units * liveNav : null;
+            decimal? currentValue = nav > 0 ? h.Units * nav : null;
             decimal? costBasis    = h.AvgCost.HasValue ? h.Units * h.AvgCost.Value : null;
             decimal? gain         = (currentValue.HasValue && costBasis.HasValue) ? currentValue - costBasis : null;
             decimal? gainPct      = (gain.HasValue && costBasis is > 0) ? gain / costBasis * 100 : null;
@@ -63,7 +113,7 @@ public class PortfolioService : IPortfolioService
                 Currency:     currency,
                 Units:        h.Units,
                 AvgCost:      h.AvgCost,
-                LiveNav:      liveNav > 0 ? liveNav : null,
+                LiveNav:      nav > 0 ? nav : null,
                 CurrentValue: currentValue,
                 CostBasis:    costBasis,
                 Gain:         gain,

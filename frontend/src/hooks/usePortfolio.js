@@ -65,6 +65,22 @@ export function useDeleteHolding() {
   });
 }
 
+// ── Live NAV for a single fund (used in AddHoldingForm for global funds) ─────
+export function useFundNav(ticker, region) {
+  return useQuery({
+    queryKey: keys.fundNav(ticker),
+    queryFn: async ({ signal }) => {
+      const { data } = await api.get(`/funds/nav/${encodeURIComponent(ticker)}`, {
+        params: { region },
+        signal,
+      });
+      return data; // { ticker, nav, timestamp, currency }
+    },
+    enabled: !!ticker,
+    staleTime: 60 * 60 * 1000, // treat as fresh for 1 hour
+  });
+}
+
 // ── Fund search ──────────────────────────────────────────────────────────────
 export function useFundSearch(query, region) {
   return useQuery({

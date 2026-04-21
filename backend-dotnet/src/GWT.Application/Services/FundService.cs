@@ -52,7 +52,30 @@ public class FundService : IFundService
     {
         var existing = await _funds.GetByIdAsync(request.Id, ct);
         if (existing is not null)
+        {
+            // For global funds, refresh NAV if the stored value is from a previous day.
+            // EnsureFund is called every time a holding is added so this keeps the catalogue
+            // current without waiting for the daily NavSyncBackgroundService.
+            if (existing.Region == Region.GLOBAL)
+            {
+                var today = DateTime.UtcNow.Date;
+                if (existing.NavDate is null || existing.NavDate.Value.Date < today)
+                {
+                    var quote = await _yahoo.GetQuoteAsync(existing.Ticker, ct);
+                    if (quote is not null)
+                    {
+                        await _funds.UpdateNavBatchAsync(
+                            [(existing.Id, quote.Price, quote.Timestamp)], ct);
+                        existing.LatestNav = quote.Price;
+                        existing.NavDate   = quote.Timestamp;
+                        _logger.LogInformation(
+                            "EnsureFund: refreshed stale NAV for {FundId} → {Price} {Currency}",
+                            existing.Id, quote.Price, quote.Currency);
+                    }
+                }
+            }
             return ToDto(existing);
+        }
 
         decimal? nav = null;
         DateTime? navDate = null;

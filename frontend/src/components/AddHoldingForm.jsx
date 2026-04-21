@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAddHolding, useUpdateHolding } from '../hooks/usePortfolio.js';
+import { useAddHolding, useUpdateHolding, useFundNav } from '../hooks/usePortfolio.js';
 import { useUIStore } from '../lib/store.js';
 import { fmtCurrency } from '../lib/format.js';
 
@@ -58,14 +58,27 @@ export function AddHoldingForm() {
     else clearOverlayMessage();
   }, [adding, updating]);
 
+  // For global funds from search results, latestNav is null (search doesn't fetch quotes).
+  // Fetch the live price from the backend so the form shows a real NAV instead of "Fetching…".
+  const needsLiveNav = !isEditing && fund?.region === 'GLOBAL' && fund?.latestNav == null;
+  const { data: liveNavData, isFetching: navFetching } = useFundNav(
+    needsLiveNav ? fund?.ticker : null,
+    'GLOBAL'
+  );
+
   if (!fund && !isEditing) return null;
 
   const displayName = isEditing ? editingHolding.name : fund.name;
+  const navCurrency = fund?.currency || (fund?.region === 'INDIA' ? 'INR' : 'USD');
   const displayNav = isEditing
     ? fmtCurrency(editingHolding.liveNav, editingHolding.currency)
     : fund.latestNav != null
-    ? fmtCurrency(fund.latestNav, fund.currency || (fund.region === 'INDIA' ? 'INR' : 'USD'))
-    : 'Fetching…';
+    ? fmtCurrency(fund.latestNav, navCurrency)
+    : liveNavData?.nav != null
+    ? fmtCurrency(liveNavData.nav, liveNavData.currency || navCurrency)
+    : navFetching
+    ? 'Fetching…'
+    : '—';
 
   function validate() {
     if (!units || Number(units) <= 0) { setValidationError('Enter a valid number of units.'); return false; }
