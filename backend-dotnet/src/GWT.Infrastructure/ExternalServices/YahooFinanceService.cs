@@ -218,6 +218,91 @@ public class YahooFinanceService : IYahooFinanceService
         return result;
     }
 
+    /// <summary>
+    /// Bulk quote fetch via the Yahoo Finance v7/finance/quote batch endpoint.
+    /// Sends one HTTP request per chunk of <paramref name="chunkSize"/> tickers
+    /// with a <paramref name="delayMs"/> courtesy pause between chunks to stay
+    /// well inside Yahoo's unofficial rate limits.
+    ///
+    /// Response shape: { "quoteResponse": { "result": [ { "symbol": "...",
+    ///   "regularMarketPrice": 0.0, "currency": "USD", "shortName": "..." } ] } }
+    /// </summary>
+    public async Task<Dictionary<string, YahooQuoteDto>> GetBulkQuotesAsync(
+        IEnumerable<string> tickers,
+        int chunkSize = 100,
+        int delayMs   = 300,
+        CancellationToken ct = default)
+    {
+        var tickerList = tickers.Distinct().ToList();
+        var result     = new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
+        if (tickerList.Count == 0) return result;
+
+        var crumb = await EnsureCrumbAsync(ct);
+
+        for (int i = 0; i < tickerList.Count; i += chunkSize)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var chunk   = tickerList.Skip(i).Take(chunkSize);
+            var symbols = string.Join(",", chunk); // tickers are alphanumeric — no encoding needed
+            var crumbParam = crumb is not null ? $"&crumb={Uri.EscapeDataString(crumb)}" : "";
+            var url     = $"https://query2.finance.yahoo.com/v7/finance/quote?symbols={symbols}{crumbParam}";
+
+            var json = await SafeGetStringAsync(url, ct);
+            if (json is not null)
+                ParseV7QuoteResponse(json, result);
+
+            // Courtesy delay between chunks — skip on the last iteration
+            if (i + chunkSize < tickerList.Count && delayMs > 0)
+                await Task.Delay(delayMs, ct);
+        }
+
+        _logger.LogDebug(
+            "GetBulkQuotesAsync: {Requested} tickers → {Returned} quotes ({Chunks} requests)",
+            tickerList.Count, result.Count, (int)Math.Ceiling((double)tickerList.Count / chunkSize));
+
+        return result;
+    }
+
+    /// <summary>Parses a Yahoo Finance v7/finance/quote JSON response into the result dictionary.</summary>
+    private void ParseV7QuoteResponse(string json, Dictionary<string, YahooQuoteDto> result)
+    {
+        try
+        {
+            using var doc          = JsonDocument.Parse(json);
+            var quoteResponse      = doc.RootElement.GetProperty("quoteResponse");
+            var resultArray        = quoteResponse.GetProperty("result");
+
+            foreach (var item in resultArray.EnumerateArray())
+            {
+                var symbol = item.TryGetProperty("symbol", out var sym) ? sym.GetString() : null;
+                if (symbol is null) continue;
+
+                // Prefer live price; fall back to previous close if market is shut
+                decimal price;
+                if (item.TryGetProperty("regularMarketPrice", out var rmp) && rmp.ValueKind == JsonValueKind.Number)
+                    price = rmp.GetDecimal();
+                else if (item.TryGetProperty("regularMarketPreviousClose", out var rmpc) && rmpc.ValueKind == JsonValueKind.Number)
+                    price = rmpc.GetDecimal();
+                else
+                    continue;
+
+                var currency  = item.TryGetProperty("currency",  out var cur) ? cur.GetString() ?? "USD" : "USD";
+                var shortName = item.TryGetProperty("shortName", out var sn)  ? sn.GetString()  : null;
+                var exchange  = item.TryGetProperty("exchange",  out var ex)  ? ex.GetString()  : null;
+                var quoteType = item.TryGetProperty("quoteType", out var qt)  ? qt.GetString()  : null;
+
+                result[symbol] = new YahooQuoteDto(symbol, shortName, exchange, quoteType, price, currency, DateTime.UtcNow);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse Yahoo Finance v7 quote batch response");
+            // Stale crumb may have caused a non-JSON body — reset so next call re-fetches
+            if (ex is JsonException) _crumb = null;
+        }
+    }
+
     // ── Crumb / session ───────────────────────────────────────────────────────
 
     /// <summary>

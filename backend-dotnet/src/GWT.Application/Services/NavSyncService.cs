@@ -41,13 +41,12 @@ public class NavSyncService : INavSyncService
         var heldFunds = await _funds.GetAllHeldFundsAsync(ct);
         var heldIds   = heldFunds.Select(f => f.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // India: sync every fund in fund_meta — AMFI file is already in memory, negligible cost.
-        // Global: only sync funds whose NAV has been fetched at least once (NavDate != null).
-        //         Catalogue-only imports (no NavDate) are skipped to avoid thousands of Yahoo calls.
+        // Sync ALL funds in fund_meta for both regions.
+        // India: AMFI file is already in memory — cost is negligible regardless of fund count.
+        // Global: uses the v7 batch endpoint (GetBulkQuotesAsync) — 100 tickers per HTTP request
+        //         with 300ms between chunks, so ~3 500 ETFs takes roughly 10 seconds.
         var allIndiaFunds  = await _funds.GetAllByRegionAsync(Region.INDIA, ct);
-        var allGlobalFunds = (await _funds.GetAllByRegionAsync(Region.GLOBAL, ct))
-            .Where(f => f.NavDate.HasValue)
-            .ToList();
+        var allGlobalFunds = await _funds.GetAllByRegionAsync(Region.GLOBAL, ct);
 
         if (allIndiaFunds.Count == 0 && allGlobalFunds.Count == 0)
         {
@@ -86,11 +85,13 @@ public class NavSyncService : INavSyncService
             _logger.LogInformation("NAV sync: queued {Count} India fund updates", navUpdates.Count);
         }
 
-        // ── Global: batch-fetch from Yahoo for every global fund in fund_meta ──────────
+        // ── Global: bulk-fetch from Yahoo for every global fund in fund_meta ───────────
+        // GetBulkQuotesAsync uses the v7 batch endpoint (100 tickers per request) so even
+        // the full ~3 500-ETF catalogue is fetched in ~35 requests over ~10 seconds.
         if (allGlobalFunds.Count > 0)
         {
             var tickers = allGlobalFunds.Select(f => f.Ticker);
-            var quotes  = await _yahoo.GetBatchQuotesAsync(tickers, ct);
+            var quotes  = await _yahoo.GetBulkQuotesAsync(tickers, ct: ct);
 
             var globalUpdated = 0;
             foreach (var fund in allGlobalFunds)

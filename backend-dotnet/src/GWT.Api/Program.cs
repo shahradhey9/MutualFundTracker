@@ -231,14 +231,29 @@ _ = Task.Run(async () =>
     // Each import uses its own DI scope (and therefore its own DbContext instance)
     // to avoid concurrent access on a single non-thread-safe DbContext.
 
+    // ── Step 3: One-time seed imports (each runs in its own scope / DbContext) ─────
+    // A fund count threshold distinguishes a seeded DB from an empty or near-empty one.
+    // If the table already has enough records the import is skipped entirely,
+    // so subsequent restarts are fast and don't perform redundant upserts.
+
     var importAmfi = Task.Run(async () =>
     {
         if (amfiFunds is not { Count: > 0 }) return;
         try
         {
-            using var s    = app.Services.CreateScope();
-            var repo       = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
-            var entities   = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta
+            using var s  = app.Services.CreateScope();
+            var db       = s.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+            var existing = await db.Set<GWT.Domain.Entities.FundMeta>()
+                                   .CountAsync(f => f.Region == GWT.Domain.Enums.Region.INDIA);
+
+            if (existing > 500)
+            {
+                Log.Information("India funds already seeded ({Count} records) — skipping bulk import.", existing);
+                return;
+            }
+
+            var repo     = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
+            var entities = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta
             {
                 Id         = $"IN-{f.SchemeCode}",
                 Region     = GWT.Domain.Enums.Region.INDIA,
@@ -252,11 +267,11 @@ _ = Task.Run(async () =>
                 UpdatedAt  = DateTime.UtcNow,
             });
             await repo.BulkUpsertFundsAsync(entities);
-            Log.Information("AMFI bulk import complete: {Count} India funds upserted into fund_meta.", amfiFunds.Count);
+            Log.Information("AMFI one-time seed complete: {Count} India funds inserted into fund_meta.", amfiFunds.Count);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "AMFI bulk import failed — India funds will be inserted on demand.");
+            Log.Warning(ex, "AMFI one-time seed failed — India funds will be inserted on demand.");
         }
     });
 
@@ -266,6 +281,16 @@ _ = Task.Run(async () =>
         try
         {
             using var s  = app.Services.CreateScope();
+            var db       = s.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+            var existing = await db.Set<GWT.Domain.Entities.FundMeta>()
+                                   .CountAsync(f => f.Region == GWT.Domain.Enums.Region.GLOBAL);
+
+            if (existing > 500)
+            {
+                Log.Information("Global ETFs already seeded ({Count} records) — skipping bulk import.", existing);
+                return;
+            }
+
             var repo     = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
             var entities = nasdaqEtfs.Select(e => new GWT.Domain.Entities.FundMeta
             {
@@ -275,16 +300,16 @@ _ = Task.Run(async () =>
                 Amc       = e.Exchange,
                 Ticker    = e.Symbol,
                 UpdatedAt = DateTime.UtcNow,
-                // LatestNav / NavDate intentionally null — fetched on demand via Yahoo Finance.
-                // Daily NavSyncService only updates global funds that already have a NavDate
-                // (i.e. have been looked up at least once) to avoid mass Yahoo API calls.
+                // LatestNav / NavDate are null at import time.
+                // The daily NavSyncService fetches live prices via GetBulkQuotesAsync
+                // for ALL global funds in fund_meta (including these catalogue entries).
             });
             await repo.BulkUpsertFundsAsync(entities);
-            Log.Information("NASDAQ ETF bulk import complete: {Count} global ETFs upserted into fund_meta.", nasdaqEtfs.Count);
+            Log.Information("NASDAQ one-time seed complete: {Count} global ETFs inserted into fund_meta.", nasdaqEtfs.Count);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "NASDAQ ETF bulk import failed — global ETFs will be cached on demand.");
+            Log.Warning(ex, "NASDAQ one-time seed failed — global ETFs will be cached on demand.");
         }
     });
 
