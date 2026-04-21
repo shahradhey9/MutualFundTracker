@@ -56,6 +56,12 @@ public static class DependencyInjection
             client.DefaultRequestHeaders.Add("User-Agent", "GWT/1.0 (wealth-tracker)");
         });
 
+        services.AddHttpClient<INasdaqService, NasdaqService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.Add("User-Agent", "GWT/1.0 (wealth-tracker)");
+        });
+
         // Yahoo Finance requires crumb-based auth — the crumb is tied to session cookies.
         // IHttpClientFactory rotates the underlying handler every 2 min by default, which
         // would lose cookies and invalidate the crumb. We therefore create a long-lived

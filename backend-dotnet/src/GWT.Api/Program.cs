@@ -162,35 +162,37 @@ await app.StartAsync();
 
 _ = Task.Run(async () =>
 {
-    using var scope = app.Services.CreateScope();
-
-    // ── Step 1: Run DB migrations (must complete before fund import) ───────────────
+    // ── Step 1: Run DB migrations (must complete before any fund imports) ──────────
     try
     {
-        var db = scope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+        using var migrationScope = app.Services.CreateScope();
+        var db = migrationScope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
         await db.Database.MigrateAsync();
         Log.Information("Database migrations applied successfully.");
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Database migration failed on startup");
-        return; // Don't attempt DB writes if migrations failed
+        Log.Error(ex, "Database migration failed on startup — aborting fund import.");
+        return;
     }
 
-    // ── Step 2: AMFI warm-up + Yahoo crumb in parallel ────────────────────────────
-    List<GWT.Application.DTOs.Funds.AmfiFundRawDto>? amfiFunds = null;
+    // ── Step 2: Fetch all external data in parallel (no DB writes yet) ────────────
+    List<GWT.Application.DTOs.Funds.AmfiFundRawDto>?  amfiFunds  = null;
+    List<GWT.Application.DTOs.Funds.NasdaqSymbolDto>? nasdaqEtfs = null;
 
+    // Each fetch uses its own scope so typed HttpClients are properly scoped.
     var amfiTask = Task.Run(async () =>
     {
         try
         {
-            var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+            using var s = app.Services.CreateScope();
+            var amfi = s.ServiceProvider.GetRequiredService<IAmfiService>();
             amfiFunds = await amfi.FetchAllNavsAsync();
             Log.Information("AMFI warm-up complete: {Count} Growth plan entries cached.", amfiFunds.Count);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "AMFI warm-up failed — first search will fetch on demand.");
+            Log.Warning(ex, "AMFI warm-up failed — India search will fall back to on-demand fetch.");
         }
     });
 
@@ -198,7 +200,8 @@ _ = Task.Run(async () =>
     {
         try
         {
-            var yahoo = scope.ServiceProvider.GetRequiredService<IYahooFinanceService>();
+            // IYahooFinanceService is singleton — resolve directly from root, not via scope.
+            var yahoo = app.Services.GetRequiredService<IYahooFinanceService>();
             await yahoo.WarmUpAsync();
         }
         catch (Exception ex)
@@ -207,40 +210,85 @@ _ = Task.Run(async () =>
         }
     });
 
-    await Task.WhenAll(amfiTask, yahooTask);
-
-    // ── Step 3: Bulk-import ALL AMFI India funds into fund_meta ───────────────────
-    // This ensures every Indian mutual fund is searchable from the DB with today's NAV,
-    // enabling DB-first search without hitting the AMFI API on every query.
-    if (amfiFunds is { Count: > 0 })
+    var nasdaqTask = Task.Run(async () =>
     {
         try
         {
-            var repo = scope.ServiceProvider
-                .GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
+            using var s = app.Services.CreateScope();
+            var nasdaq = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Services.INasdaqService>();
+            nasdaqEtfs = await nasdaq.GetAllEtfsAsync();
+            Log.Information("NASDAQ ETF catalogue fetched: {Count} ETFs.", nasdaqEtfs.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "NASDAQ ETF fetch failed — global search will cache results on demand.");
+        }
+    });
 
-            var fundEntities = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta
+    await Task.WhenAll(amfiTask, yahooTask, nasdaqTask);
+
+    // ── Step 3: Bulk-import India + Global catalogues into fund_meta (in parallel) ──
+    // Each import uses its own DI scope (and therefore its own DbContext instance)
+    // to avoid concurrent access on a single non-thread-safe DbContext.
+
+    var importAmfi = Task.Run(async () =>
+    {
+        if (amfiFunds is not { Count: > 0 }) return;
+        try
+        {
+            using var s    = app.Services.CreateScope();
+            var repo       = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
+            var entities   = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta
             {
-                Id        = $"IN-{f.SchemeCode}",
-                Region    = GWT.Domain.Enums.Region.INDIA,
-                Name      = f.SchemeName,
-                Amc       = f.Amc,
-                Ticker    = $"AMFI-{f.SchemeCode}",
+                Id         = $"IN-{f.SchemeCode}",
+                Region     = GWT.Domain.Enums.Region.INDIA,
+                Name       = f.SchemeName,
+                Amc        = f.Amc,
+                Ticker     = $"AMFI-{f.SchemeCode}",
                 SchemeCode = f.SchemeCode,
-                Isin      = f.Isin,
-                LatestNav = f.Nav,
-                NavDate   = f.NavDate,
-                UpdatedAt = DateTime.UtcNow,
+                Isin       = f.Isin,
+                LatestNav  = f.Nav,
+                NavDate    = f.NavDate,
+                UpdatedAt  = DateTime.UtcNow,
             });
-
-            await repo.BulkUpsertFundsAsync(fundEntities);
+            await repo.BulkUpsertFundsAsync(entities);
             Log.Information("AMFI bulk import complete: {Count} India funds upserted into fund_meta.", amfiFunds.Count);
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "AMFI bulk import failed — India funds will be inserted on demand.");
         }
-    }
+    });
+
+    var importNasdaq = Task.Run(async () =>
+    {
+        if (nasdaqEtfs is not { Count: > 0 }) return;
+        try
+        {
+            using var s  = app.Services.CreateScope();
+            var repo     = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
+            var entities = nasdaqEtfs.Select(e => new GWT.Domain.Entities.FundMeta
+            {
+                Id        = $"US-{e.Symbol}",
+                Region    = GWT.Domain.Enums.Region.GLOBAL,
+                Name      = e.Name,
+                Amc       = e.Exchange,
+                Ticker    = e.Symbol,
+                UpdatedAt = DateTime.UtcNow,
+                // LatestNav / NavDate intentionally null — fetched on demand via Yahoo Finance.
+                // Daily NavSyncService only updates global funds that already have a NavDate
+                // (i.e. have been looked up at least once) to avoid mass Yahoo API calls.
+            });
+            await repo.BulkUpsertFundsAsync(entities);
+            Log.Information("NASDAQ ETF bulk import complete: {Count} global ETFs upserted into fund_meta.", nasdaqEtfs.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "NASDAQ ETF bulk import failed — global ETFs will be cached on demand.");
+        }
+    });
+
+    await Task.WhenAll(importAmfi, importNasdaq);
 });
 
 await app.WaitForShutdownAsync();

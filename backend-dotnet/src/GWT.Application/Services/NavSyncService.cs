@@ -41,9 +41,13 @@ public class NavSyncService : INavSyncService
         var heldFunds = await _funds.GetAllHeldFundsAsync(ct);
         var heldIds   = heldFunds.Select(f => f.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Sync ALL funds in fund_meta (not just held ones) so the catalogue stays fresh.
+        // India: sync every fund in fund_meta — AMFI file is already in memory, negligible cost.
+        // Global: only sync funds whose NAV has been fetched at least once (NavDate != null).
+        //         Catalogue-only imports (no NavDate) are skipped to avoid thousands of Yahoo calls.
         var allIndiaFunds  = await _funds.GetAllByRegionAsync(Region.INDIA, ct);
-        var allGlobalFunds = await _funds.GetAllByRegionAsync(Region.GLOBAL, ct);
+        var allGlobalFunds = (await _funds.GetAllByRegionAsync(Region.GLOBAL, ct))
+            .Where(f => f.NavDate.HasValue)
+            .ToList();
 
         if (allIndiaFunds.Count == 0 && allGlobalFunds.Count == 0)
         {
