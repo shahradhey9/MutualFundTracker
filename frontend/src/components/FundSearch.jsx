@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFundSearch } from '../hooks/usePortfolio.js';
 import { useUIStore } from '../lib/store.js';
+import { useDisplayRates } from '../hooks/useDisplayRates.js';
 import { fmtCurrency } from '../lib/format.js';
 
 const REGIONS = [
@@ -15,6 +16,8 @@ export function FundSearch() {
     selectedFund, setSelectedFund,
     clearSearch,
   } = useUIStore();
+
+  const { displayCurrency, convert } = useDisplayRates();
 
   const inputRef = useRef(null);
 
@@ -186,7 +189,7 @@ export function FundSearch() {
                       <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
                         {fund.ticker}
                         {fund.amc && ` · ${fund.amc}`}
-                        {fund.latestNav != null && ` · NAV ${fmtCurrency(fund.latestNav, fund.currency || (searchRegion === 'INDIA' ? 'INR' : 'USD'))}`}
+                        {fund.latestNav != null && ` · NAV ${fmtCurrency(convert(fund.latestNav, fund.currency || (searchRegion === 'INDIA' ? 'INR' : 'USD')), displayCurrency)}`}
                         {fund.category && ` · ${fund.category}`}
                       </div>
                     </div>

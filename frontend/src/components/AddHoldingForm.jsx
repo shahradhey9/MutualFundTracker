@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAddHolding, useUpdateHolding, useFundNav } from '../hooks/usePortfolio.js';
 import { useUIStore } from '../lib/store.js';
+import { useDisplayRates } from '../hooks/useDisplayRates.js';
 import { fmtCurrency } from '../lib/format.js';
 
 const label = {
@@ -37,6 +38,8 @@ export function AddHoldingForm() {
   const isEditing = !!editingHolding;
   const fund = isEditing ? null : selectedFund;
 
+  const { displayCurrency, convert } = useDisplayRates();
+
   const [units, setUnits] = useState('');
   const [avgCost, setAvgCost] = useState('');
   const [purchaseAt, setPurchaseAt] = useState(new Date().toISOString().split('T')[0]);
@@ -70,12 +73,13 @@ export function AddHoldingForm() {
 
   const displayName = isEditing ? editingHolding.name : fund.name;
   const navCurrency = fund?.currency || (fund?.region === 'INDIA' ? 'INR' : 'USD');
+  const editCurrency = editingHolding?.currency || 'USD';
   const displayNav = isEditing
-    ? fmtCurrency(editingHolding.liveNav, editingHolding.currency)
+    ? fmtCurrency(convert(editingHolding.liveNav, editCurrency), displayCurrency)
     : fund.latestNav != null
-    ? fmtCurrency(fund.latestNav, navCurrency)
+    ? fmtCurrency(convert(fund.latestNav, navCurrency), displayCurrency)
     : liveNavData?.nav != null
-    ? fmtCurrency(liveNavData.nav, liveNavData.currency || navCurrency)
+    ? fmtCurrency(convert(liveNavData.nav, liveNavData.currency || navCurrency), displayCurrency)
     : navFetching
     ? 'Fetching…'
     : '—';
