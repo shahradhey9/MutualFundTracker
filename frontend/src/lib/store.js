@@ -35,4 +35,12 @@ export const useUIStore = create((set) => ({
   overlayMessage: null,
   setOverlayMessage: (msg) => set({ overlayMessage: msg }),
   clearOverlayMessage: () => set({ overlayMessage: null }),
+
+  // Display currency — all portfolio values are shown in this currency.
+  // Persisted in localStorage so it survives page refreshes.
+  displayCurrency: localStorage.getItem('gwt_display_currency') || 'USD',
+  setDisplayCurrency: (c) => {
+    localStorage.setItem('gwt_display_currency', c);
+    set({ displayCurrency: c });
+  },
 }));

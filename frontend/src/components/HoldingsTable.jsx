@@ -24,7 +24,7 @@ const td = {
 };
 const tdR = { ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 };
 
-export function HoldingsTable({ holdings }) {
+export function HoldingsTable({ holdings, displayCurrency = 'USD', convert = (v) => v }) {
   const [hoveredRow, setHoveredRow] = useState(null);
   const { mutate: deleteHolding, isPending: deleting } = useDeleteHolding();
   const setEditingHolding = useUIStore(s => s.setEditingHolding);
@@ -109,8 +109,8 @@ export function HoldingsTable({ holdings }) {
               </td>
               <td style={tdR}>{fmtCurrency(h.liveNav, h.currency)}</td>
               <td style={tdR}>{fmtUnits(h.units)}</td>
-              <td style={tdR}>{fmtCurrency(h.currentValue, h.currency)}</td>
-              <td style={tdR}>{h.costBasis ? fmtCurrency(h.costBasis, h.currency) : '—'}</td>
+              <td style={tdR}>{fmtCurrency(convert(h.currentValue, h.currency), displayCurrency)}</td>
+              <td style={tdR}>{h.costBasis ? fmtCurrency(convert(h.costBasis, h.currency), displayCurrency) : '—'}</td>
               <td style={tdR}><GainPill pct={h.gainPct} /></td>
               <td style={tdR}>{fmtDate(h.purchaseAt)}</td>
               <td style={{ ...td, whiteSpace: 'nowrap' }}>

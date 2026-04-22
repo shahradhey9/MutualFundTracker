@@ -12,9 +12,35 @@ export function fmtUSD(n) {
   });
 }
 
-export function fmtCurrency(n, currency) {
+// All currencies the UI supports for display.
+export const DISPLAY_CURRENCIES = [
+  { code: 'USD', label: 'US Dollar',          flag: '🇺🇸' },
+  { code: 'INR', label: 'Indian Rupee',        flag: '🇮🇳' },
+  { code: 'GBP', label: 'British Pound',       flag: '🇬🇧' },
+  { code: 'EUR', label: 'Euro',                flag: '🇪🇺' },
+  { code: 'CAD', label: 'Canadian Dollar',     flag: '🇨🇦' },
+  { code: 'AUD', label: 'Australian Dollar',   flag: '🇦🇺' },
+  { code: 'JPY', label: 'Japanese Yen',        flag: '🇯🇵' },
+  { code: 'SGD', label: 'Singapore Dollar',    flag: '🇸🇬' },
+  { code: 'CHF', label: 'Swiss Franc',         flag: '🇨🇭' },
+  { code: 'AED', label: 'UAE Dirham',          flag: '🇦🇪' },
+];
+
+export function fmtCurrency(n, currency = 'USD') {
+  if (n == null || isNaN(Number(n))) return '—';
+  // INR keeps its traditional Indian grouping (e.g. ₹12,34,567.89)
   if (currency === 'INR') return fmtINR(n);
-  return fmtUSD(n);
+  // All other currencies use Intl so the correct symbol is auto-applied
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: currency === 'JPY' ? 0 : 2,
+    }).format(Number(n));
+  } catch {
+    return fmtUSD(n);
+  }
 }
 
 export function fmtUnits(n) {
