@@ -262,6 +262,7 @@ _ = Task.Run(async () =>
                 Ticker     = $"AMFI-{f.SchemeCode}",
                 SchemeCode = f.SchemeCode,
                 Isin       = f.Isin,
+                Timezone   = "Asia/Kolkata",
                 LatestNav  = f.Nav,
                 NavDate    = f.NavDate,
                 UpdatedAt  = DateTime.UtcNow,
@@ -299,6 +300,7 @@ _ = Task.Run(async () =>
                 Name      = e.Name,
                 Amc       = e.Exchange,
                 Ticker    = e.Symbol,
+                Timezone  = "America/New_York",  // NASDAQ/NYSE — Eastern Time
                 UpdatedAt = DateTime.UtcNow,
                 // LatestNav / NavDate are null at import time.
                 // The daily NavSyncService fetches live prices via GetBulkQuotesAsync

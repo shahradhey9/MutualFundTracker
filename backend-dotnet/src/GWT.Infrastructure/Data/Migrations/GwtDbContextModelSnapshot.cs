@@ -76,6 +76,11 @@ namespace GWT.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("ticker");
 
+                    b.Property<string>("Timezone")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("timezone");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");

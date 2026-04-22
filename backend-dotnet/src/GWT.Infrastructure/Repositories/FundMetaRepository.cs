@@ -29,6 +29,9 @@ public class FundMetaRepository : IFundMetaRepository
     public Task<List<FundMeta>> GetAllByRegionAsync(Region region, CancellationToken ct = default) =>
         _db.FundMetas.Where(f => f.Region == region).ToListAsync(ct);
 
+    public Task<List<FundMeta>> GetGlobalByTimezoneAsync(string timezone, CancellationToken ct = default) =>
+        _db.FundMetas.Where(f => f.Region == Region.GLOBAL && f.Timezone == timezone).ToListAsync(ct);
+
     /// <summary>
     /// Word-by-word ILIKE search: every word in the query must appear in name, AMC, ticker, or scheme code.
     /// Matches the same logic as the AMFI in-memory search so results are consistent.

@@ -18,6 +18,10 @@ public class FundMeta
     public string? Category { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // IANA timezone identifier for the fund's exchange — used to schedule midnight NAV sync
+    // per country (e.g. "Asia/Kolkata" for India, "America/New_York" for US, "Europe/London" for UK).
+    public string? Timezone { get; set; }
+
     // Denormalised latest NAV for fast portfolio reads (authoritative source is NavHistory)
     public decimal? LatestNav { get; set; }
     public DateTime? NavDate { get; set; }

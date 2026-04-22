@@ -43,6 +43,7 @@ public class GwtDbContext : DbContext
             e.Property(f => f.SchemeCode).HasColumnName("scheme_code").HasMaxLength(20);
             e.Property(f => f.Isin).HasColumnName("isin").HasMaxLength(20);
             e.Property(f => f.Category).HasColumnName("category").HasMaxLength(100);
+            e.Property(f => f.Timezone).HasColumnName("timezone").HasMaxLength(50);
             e.Property(f => f.UpdatedAt).HasColumnName("updated_at");
             e.Property(f => f.LatestNav).HasColumnName("latest_nav").HasColumnType("numeric(18,6)");
             e.Property(f => f.NavDate).HasColumnName("nav_date");
