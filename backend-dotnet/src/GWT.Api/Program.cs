@@ -154,28 +154,28 @@ app.MapControllers();
 
 Log.Information("GWT API starting on {Environment}", app.Environment.EnvironmentName);
 
-// Start accepting HTTP requests immediately so Render's health check passes
-// and the frontend's early /health ping gets a fast 200 — reducing perceived cold-start time.
-// Migrations run in a background task; they are idempotent and typically instant on
-// subsequent restarts (only a schema metadata check when no pending migrations exist).
+// ── Step 1: Run DB migrations synchronously before accepting any requests ─────────────
+// This must happen before StartAsync() so EF Core's model is always in sync with the
+// schema when the first search/query arrives. Migrations are idempotent and run in
+// < 1 second on subsequent restarts when no pending migrations exist.
+try
+{
+    using var migrationScope = app.Services.CreateScope();
+    var db = migrationScope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
+    await db.Database.MigrateAsync();
+    Log.Information("Database migrations applied successfully.");
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Database migration failed — cannot serve requests with a mismatched schema.");
+    throw;
+}
+
+// Start accepting HTTP requests after schema is confirmed correct.
 await app.StartAsync();
 
 _ = Task.Run(async () =>
 {
-    // ── Step 1: Run DB migrations (must complete before any fund imports) ──────────
-    try
-    {
-        using var migrationScope = app.Services.CreateScope();
-        var db = migrationScope.ServiceProvider.GetRequiredService<GWT.Infrastructure.Data.GwtDbContext>();
-        await db.Database.MigrateAsync();
-        Log.Information("Database migrations applied successfully.");
-    }
-    catch (Exception ex)
-    {
-        Log.Error(ex, "Database migration failed on startup — aborting fund import.");
-        return;
-    }
-
     // ── Step 2: Fetch all external data in parallel (no DB writes yet) ────────────
     List<GWT.Application.DTOs.Funds.AmfiFundRawDto>?  amfiFunds  = null;
     List<GWT.Application.DTOs.Funds.NasdaqSymbolDto>? nasdaqEtfs = null;
