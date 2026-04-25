@@ -46,24 +46,23 @@ function Sidebar({ user, onLogout }) {
   return (
     <>
       <style>{`
-        .sidebar{width:220px;flex-shrink:0;background:#fff;border-right:1px solid #e8e8e4;display:flex;flex-direction:column;height:100vh;position:sticky;top:0}
-        @media(prefers-color-scheme:dark){.sidebar{background:#1c1c1a;border-color:#2a2a28}.nav-item:hover{background:#252523!important}.nav-item.active{background:#252523!important;color:#5a9cf5!important}.sidebar-footer{border-color:#2a2a28!important}.user-name{color:#e8e8e4!important}.user-email{color:#888780!important}.logout-btn{color:#888780!important}.brand-text{color:#e8e8e4!important}.brand-sub{color:#888780!important}.nav-section{color:#444441!important}}
-        .nav-item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;cursor:pointer;font-size:14px;color:#5f5e5a;font-weight:400;transition:background .12s,color .12s;border:none;background:none;width:100%;text-align:left;font-family:inherit}
-        .nav-item:hover{background:#f4f4f2;color:#1a1a18}
-        .nav-item.active{background:#eff6ff;color:#2563eb;font-weight:500}
-        .nav-item.active svg{color:#2563eb}
-        .sidebar-footer{padding:16px;border-top:1px solid #e8e8e4;margin-top:auto}
-        .user-avatar{width:32px;height:32px;border-radius:50%;background:#2563eb;color:white;font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-        .user-name{font-size:13px;font-weight:500;color:#1a1a18}
-        .user-email{font-size:11px;color:#888780;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
-        .logout-btn{background:none;border:none;cursor:pointer;color:#b4b2a9;font-size:20px;padding:4px;line-height:1;border-radius:4px;transition:color .12s;font-family:inherit}
-        .logout-btn:hover{color:#ef4444}
-        .brand-text{font-size:15px;font-weight:500;color:#1a1a18;letter-spacing:-0.01em}
-        .brand-sub{font-size:11px;color:#b4b2a9;margin-top:1px}
-        .nav-section{font-size:10px;font-weight:600;color:#b4b2a9;letter-spacing:.08em;text-transform:uppercase;padding:0 8px;margin-bottom:4px;margin-top:8px}
+        .sidebar{width:224px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border-light);display:flex;flex-direction:column;height:100vh;position:sticky;top:0;box-shadow:1px 0 0 var(--border-light)}
+        .nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);cursor:pointer;font-size:13px;font-weight:400;color:var(--text-secondary);transition:background .12s,color .12s;border:1px solid transparent;background:none;width:100%;text-align:left;font-family:var(--font-sans)}
+        .nav-item:hover{background:var(--bg-hover);color:var(--text-primary)}
+        .nav-item.active{background:var(--accent-light);color:var(--accent);font-weight:500;border-color:var(--border-focus)}
+        .nav-item.active svg{color:var(--accent)}
+        .sidebar-footer{padding:14px 16px;border-top:1px solid var(--border-light);margin-top:auto}
+        .user-avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .user-name{font-size:13px;font-weight:500;color:var(--text-primary)}
+        .user-email{font-size:11px;color:var(--text-muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;font-family:var(--font-mono)}
+        .logout-btn{background:none;border:1px solid var(--border-light);cursor:pointer;color:var(--text-muted);font-size:16px;padding:4px 7px;line-height:1;border-radius:var(--radius-sm);transition:all .12s;font-family:inherit}
+        .logout-btn:hover{border-color:var(--color-loss);color:var(--color-loss);background:var(--color-loss-bg)}
+        .brand-text{font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:-0.01em}
+        .brand-sub{font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono)}
+        .nav-section{font-size:10px;font-weight:600;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;padding:0 8px;margin-bottom:4px;margin-top:8px}
       `}</style>
       <div className="sidebar">
-        <div style={{ padding:'20px 16px 16px', borderBottom:'1px solid #e8e8e4' }}>
+        <div style={{ padding:'20px 16px 16px', borderBottom:'1px solid var(--border-light)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <div style={{ width:32, height:32, borderRadius:8, background:'#2563eb', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -108,10 +107,9 @@ function TopBar() {
   return (
     <>
       <style>{`
-        .topbar{height:56px;border-bottom:1px solid #e8e8e4;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:#fff;flex-shrink:0}
-        @media(prefers-color-scheme:dark){.topbar{background:#1c1c1a;border-color:#2a2a28}.topbar-title{color:#e8e8e4!important}.topbar-date{color:#888780!important}}
-        .topbar-title{font-size:15px;font-weight:500;color:#1a1a18}
-        .topbar-date{font-size:12px;color:#b4b2a9;font-family:var(--font-mono,monospace)}
+        .topbar{height:54px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--bg-card);flex-shrink:0}
+        .topbar-title{font-size:14px;font-weight:600;color:var(--text-primary)}
+        .topbar-date{font-size:11px;color:var(--text-muted);font-family:var(--font-mono)}
       `}</style>
       <div className="topbar">
         <span className="topbar-title">{titles[activeTab] || 'Dashboard'}</span>
@@ -158,10 +156,9 @@ function Shell() {
     <>
       <LoadingOverlay />
       <style>{`
-        .app-root{display:flex;min-height:100vh;background:#f7f7f5;font-family:var(--font-sans,'DM Sans',system-ui)}
-        @media(prefers-color-scheme:dark){.app-root{background:#141413}.main-col{background:#141413!important}.page-wrap{background:#141413!important}}
-        .main-col{flex:1;display:flex;flex-direction:column;min-width:0;background:#f7f7f5}
-        .page-wrap{flex:1;padding:28px;max-width:960px;width:100%;margin:0 auto;box-sizing:border-box}
+        .app-root{display:flex;min-height:100vh;background:var(--bg-app);font-family:var(--font-sans)}
+        .main-col{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-app)}
+        .page-wrap{flex:1;padding:28px;max-width:980px;width:100%;margin:0 auto;box-sizing:border-box}
       `}</style>
       <div className="app-root">
         <Sidebar user={user} onLogout={logout} />
