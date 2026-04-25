@@ -1,5 +1,7 @@
 using GWT.Application.DTOs.Common;
+using GWT.Application.Interfaces.Repositories;
 using GWT.Application.Interfaces.Services;
+using GWT.Domain.Entities;
 using GWT.Domain.Enums;
 using GWT.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
@@ -12,13 +14,23 @@ namespace GWT.Api.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly INavSyncService _navSync;
+    private readonly IAmfiService _amfi;
+    private readonly IFundMetaRepository _funds;
     private readonly GwtDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<AdminController> _logger;
 
-    public AdminController(INavSyncService navSync, GwtDbContext db, IConfiguration config, ILogger<AdminController> logger)
+    public AdminController(
+        INavSyncService navSync,
+        IAmfiService amfi,
+        IFundMetaRepository funds,
+        GwtDbContext db,
+        IConfiguration config,
+        ILogger<AdminController> logger)
     {
         _navSync = navSync;
+        _amfi    = amfi;
+        _funds   = funds;
         _db      = db;
         _config  = config;
         _logger  = logger;
@@ -85,5 +97,51 @@ public class AdminController : ControllerBase
 
         await _navSync.SyncAllAsync(ct);
         return Ok(ApiResponse.Ok());
+    }
+
+    /// <summary>
+    /// Force-reseed ALL India mutual funds from AMFI NAVAll.txt into fund_meta,
+    /// bypassing the startup seed guard. Safe to call multiple times — uses upsert.
+    /// Requires X-Admin-Key header.
+    /// </summary>
+    [HttpPost("reseed/india")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ReseedIndia(CancellationToken ct)
+    {
+        var expectedKey = _config["AdminKey"];
+        var providedKey = Request.Headers["X-Admin-Key"].FirstOrDefault();
+
+        if (string.IsNullOrEmpty(expectedKey) || providedKey != expectedKey)
+        {
+            _logger.LogWarning("Rejected admin reseed/india attempt from {IP}", HttpContext.Connection.RemoteIpAddress);
+            return Unauthorized(ApiResponse.Fail("Invalid or missing admin key."));
+        }
+
+        _logger.LogInformation("Admin triggered India fund reseed — fetching AMFI NAVAll.txt…");
+
+        var allNavs = await _amfi.FetchAllNavsAsync(ct);
+        if (allNavs.Count == 0)
+            return Ok(new { success = false, message = "AMFI returned 0 funds — reseed skipped.", count = 0 });
+
+        var entities = allNavs.Select(f => new FundMeta
+        {
+            Id         = $"IN-{f.SchemeCode}",
+            Region     = Region.INDIA,
+            Name       = f.SchemeName,
+            Amc        = f.Amc,
+            Ticker     = $"AMFI-{f.SchemeCode}",
+            SchemeCode = f.SchemeCode,
+            Isin       = f.Isin,
+            Timezone   = "Asia/Kolkata",
+            LatestNav  = f.Nav,
+            NavDate    = f.NavDate,
+            UpdatedAt  = DateTime.UtcNow,
+        }).ToList();
+
+        await _funds.BulkUpsertFundsAsync(entities, ct);
+
+        _logger.LogInformation("India fund reseed complete: {Count} funds upserted.", entities.Count);
+        return Ok(new { success = true, count = entities.Count, message = $"{entities.Count} India funds upserted into fund_meta." });
     }
 }
