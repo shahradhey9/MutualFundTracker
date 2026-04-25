@@ -167,13 +167,44 @@ public class NavSyncBackgroundService : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var amfi = scope.ServiceProvider.GetRequiredService<IAmfiService>();
-            await amfi.FetchAllNavsAsync(ct);
-            _logger.LogInformation("AMFI warm-up complete — NAVAll.txt cached in memory.");
+            var amfi  = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+            var funds = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+
+            var allNavs = await amfi.FetchAllNavsAsync(ct);
+            _logger.LogInformation("AMFI warm-up complete — {Count} Growth plan entries cached in memory.", allNavs.Count);
+
+            // Auto-reseed fund_meta if India funds look sparse (< 1000 records).
+            // India search now uses the AMFI cache directly, but fund_meta must be populated
+            // so that holdings can reference a valid FundId when a user adds a fund.
+            var indiaCount = await funds.GetAllByRegionAsync(Region.INDIA, ct)
+                                        .ContinueWith(t => t.Result.Count, ct);
+            if (indiaCount < 1000)
+            {
+                _logger.LogWarning(
+                    "India fund_meta has only {Count} records — running automatic reseed from AMFI cache.", indiaCount);
+
+                var entities = allNavs.Select(f => new GWT.Domain.Entities.FundMeta
+                {
+                    Id         = $"IN-{f.SchemeCode}",
+                    Region     = Region.INDIA,
+                    Name       = f.SchemeName,
+                    Amc        = f.Amc,
+                    Ticker     = $"AMFI-{f.SchemeCode}",
+                    SchemeCode = f.SchemeCode,
+                    Isin       = f.Isin,
+                    Timezone   = "Asia/Kolkata",
+                    LatestNav  = f.Nav,
+                    NavDate    = f.NavDate,
+                    UpdatedAt  = DateTime.UtcNow,
+                });
+
+                await funds.BulkUpsertFundsAsync(entities, ct);
+                _logger.LogInformation("Auto-reseed complete: {Count} India funds upserted into fund_meta.", allNavs.Count);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "AMFI warm-up failed — first India search will be slower.");
+            _logger.LogWarning(ex, "AMFI warm-up failed — India search will fall back to on-demand AMFI fetch.");
         }
     }
 

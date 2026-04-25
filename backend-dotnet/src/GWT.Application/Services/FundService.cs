@@ -28,29 +28,21 @@ public class FundService : IFundService
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default)
     {
-        var dbResults = await _funds.SearchAsync(query, region, ct: ct);
-        _logger.LogDebug("{Region} search '{Query}' → {Count} results from fund_meta", region, query, dbResults.Count);
-
-        if (region == Region.INDIA && dbResults.Count > 0)
+        if (region == Region.INDIA)
         {
-            // Overlay NAVs from the AMFI in-memory cache (refreshed every 4 hours, essentially free).
-            // DB latestNav is only updated at midnight; the AMFI cache always holds the latest published NAV.
-            var amfiNavs = await _amfi.FetchAllNavsAsync(ct);
-            var navIndex = amfiNavs.ToDictionary(x => x.SchemeCode, x => x);
-
-            return dbResults.Select(f =>
-            {
-                if (f.SchemeCode is not null && navIndex.TryGetValue(f.SchemeCode, out var raw))
-                    return new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, raw.Nav, raw.NavDate);
-                return ToSearchResultDto(f);
-            }).ToList();
+            // Search the AMFI in-memory cache directly — it always contains ALL ~7000 Growth
+            // plan funds with today's published NAVs, regardless of DB seed state.
+            // The DB seed may be incomplete; the AMFI cache is always authoritative for India.
+            _logger.LogDebug("India search '{Query}' — using AMFI in-memory cache", query);
+            return await _amfi.SearchAsync(query, ct);
         }
 
-        if (region == Region.GLOBAL && dbResults.Count > 0)
+        // Global: DB search + overlay live prices from the in-memory Yahoo NAV cache.
+        var dbResults = await _funds.SearchAsync(query, region, ct: ct);
+        _logger.LogDebug("Global search '{Query}' → {Count} results from fund_meta", query, dbResults.Count);
+
+        if (dbResults.Count > 0)
         {
-            // Read from the in-memory global NAV cache (refreshed every 4 hours by the background service).
-            // This is the same pattern as India using the AMFI cache — no HTTP call per search.
-            // Falls back to the DB value for any ticker not yet in the cache.
             var navCache = _yahoo.GetGlobalNavSnapshot();
             return dbResults.Select(f =>
             {
