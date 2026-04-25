@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using GWT.Application.DTOs.Portfolio;
 using GWT.Application.Interfaces.Repositories;
 using GWT.Application.Interfaces.Services;
@@ -10,90 +11,46 @@ namespace GWT.Application.Services;
 public class PortfolioService : IPortfolioService
 {
     private readonly IHoldingRepository _holdings;
-    private readonly IFundMetaRepository _funds;
     private readonly IYahooFinanceService _yahoo;
-    private readonly ICacheService _cache;
     private readonly ILogger<PortfolioService> _logger;
 
-    // Portfolio is assembled from stored FundMeta.LatestNav, refreshed on demand for
-    // stale global holdings. NAVs are also kept fresh by NavSyncBackgroundService (daily at
-    // 15:00 UTC), but on the Render free tier the process may be asleep at that time.
-    private static readonly TimeSpan PortfolioCacheTtl = TimeSpan.FromMinutes(5);
+    // Process-level in-memory cache keyed by userId.
+    // Redis is unavailable on Render free tier so we cache in process memory.
+    // Static so it survives across scoped DI instances of PortfolioService.
+    private static readonly ConcurrentDictionary<Guid, (List<PortfolioItemDto> Data, DateTime Expiry)> _memCache = new();
+    private static readonly TimeSpan PortfolioMemCacheTtl = TimeSpan.FromMinutes(5);
 
     public PortfolioService(
         IHoldingRepository holdings,
-        IFundMetaRepository funds,
         IYahooFinanceService yahoo,
-        ICacheService cache,
         ILogger<PortfolioService> logger)
     {
         _holdings = holdings;
-        _funds = funds;
-        _yahoo = yahoo;
-        _cache = cache;
-        _logger = logger;
+        _yahoo    = yahoo;
+        _logger   = logger;
     }
 
     public async Task<List<PortfolioItemDto>> GetPortfolioAsync(Guid userId, CancellationToken ct = default)
     {
-        var cacheKey = $"portfolio:{userId}";
-        var cached = await _cache.GetAsync<List<PortfolioItemDto>>(cacheKey, ct);
-        if (cached is not null) return cached;
+        // 1. Process-level in-memory cache (fast path — no DB, no HTTP)
+        if (_memCache.TryGetValue(userId, out var entry) && DateTime.UtcNow < entry.Expiry)
+            return entry.Data;
 
         var userHoldings = await _holdings.GetByUserAsync(userId, ct);
         if (userHoldings.Count == 0) return [];
 
-        // For global holdings whose stored NAV is from a previous day, fetch live prices
-        // from Yahoo Finance so the portfolio always shows today's market value.
-        var today = DateTime.UtcNow.Date;
-        var staleGlobal = userHoldings
-            .Where(h => h.Fund.Region == Region.GLOBAL &&
-                        (h.Fund.NavDate is null || h.Fund.NavDate.Value.Date < today))
-            .ToList();
-
-        // liveNav overrides: ticker → live price (only populated when Yahoo call succeeds)
-        var liveNav = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-
-        if (staleGlobal.Count > 0)
-        {
-            try
-            {
-                var tickers = staleGlobal.Select(h => h.Fund.Ticker).Distinct();
-                var quotes = await _yahoo.GetBatchQuotesAsync(tickers, ct);
-
-                foreach (var (ticker, q) in quotes)
-                    liveNav[ticker] = q.Price;
-
-                // Persist fresh NAVs so subsequent loads don't need another Yahoo round-trip
-                var tickerToFundId = staleGlobal.ToDictionary(h => h.Fund.Ticker, h => h.Fund.Id);
-                var updates = quotes
-                    .Where(kvp => tickerToFundId.ContainsKey(kvp.Key))
-                    .Select(kvp => (
-                        FundId: tickerToFundId[kvp.Key],
-                        Nav:    kvp.Value.Price,
-                        NavDate: kvp.Value.Timestamp))
-                    .ToList();
-
-                if (updates.Count > 0)
-                    await _funds.UpdateNavBatchAsync(updates, ct);
-
-                _logger.LogInformation(
-                    "Portfolio: live NAV refresh for {Count} stale global holding(s), user {UserId}",
-                    updates.Count, userId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Portfolio: live NAV refresh failed — falling back to stored NAV for user {UserId}", userId);
-            }
-        }
+        // 2. Read global NAVs from the in-memory cache maintained by the background service.
+        //    This is refreshed every 4 hours from Yahoo Finance — zero HTTP calls on the
+        //    portfolio hot path.  Falls back to the stored DB value for any ticker not yet cached.
+        var globalNavSnapshot = _yahoo.GetGlobalNavSnapshot();
 
         var result = userHoldings.Select(h =>
         {
-            // Prefer the freshly-fetched price; fall back to what is stored in DB
-            var nav = h.Fund.Region == Region.GLOBAL && liveNav.TryGetValue(h.Fund.Ticker, out var p)
-                ? (decimal?)p
-                : h.Fund.LatestNav;
+            decimal? nav;
+            if (h.Fund.Region == Region.GLOBAL && globalNavSnapshot.TryGetValue(h.Fund.Ticker, out var q))
+                nav = q.Price;
+            else
+                nav = h.Fund.LatestNav;
 
             var currency = h.Fund.Region == Region.INDIA ? "INR" : "USD";
 
@@ -123,7 +80,8 @@ public class PortfolioService : IPortfolioService
             );
         }).ToList();
 
-        await _cache.SetAsync(cacheKey, result, PortfolioCacheTtl, ct);
+        // 3. Store in process-level memory cache
+        _memCache[userId] = (result, DateTime.UtcNow.Add(PortfolioMemCacheTtl));
         return result;
     }
 
@@ -165,7 +123,7 @@ public class PortfolioService : IPortfolioService
             }, ct);
         }
 
-        await _cache.DeleteAsync($"portfolio:{userId}", ct);
+        _memCache.TryRemove(userId, out _);
         _logger.LogInformation("Holding upserted for user {UserId}, fund {FundId}", userId, request.FundId);
         return ToDto(holding);
     }
@@ -184,7 +142,7 @@ public class PortfolioService : IPortfolioService
         holding.UpdatedAt = DateTime.UtcNow;
 
         var updated = await _holdings.UpdateAsync(holding, ct);
-        await _cache.DeleteAsync($"portfolio:{userId}", ct);
+        _memCache.TryRemove(userId, out _);
         return ToDto(updated);
     }
 
@@ -197,7 +155,7 @@ public class PortfolioService : IPortfolioService
             throw new UnauthorizedAccessException("You do not own this holding.");
 
         await _holdings.DeleteAsync(holding, ct);
-        await _cache.DeleteAsync($"portfolio:{userId}", ct);
+        _memCache.TryRemove(userId, out _);
         _logger.LogInformation("Holding {HoldingId} deleted for user {UserId}", holdingId, userId);
     }
 
