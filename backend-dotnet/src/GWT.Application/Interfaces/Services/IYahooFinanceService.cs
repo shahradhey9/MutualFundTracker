@@ -26,4 +26,18 @@ public interface IYahooFinanceService
         int chunkSize = 100,
         int delayMs = 300,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the current in-memory global NAV snapshot without triggering a network fetch.
+    /// Returns an empty dictionary if the cache has not been populated yet.
+    /// </summary>
+    Dictionary<string, YahooQuoteDto> GetGlobalNavSnapshot();
+
+    /// <summary>
+    /// Bulk-fetches live quotes for all provided tickers and stores them in a 4-hour
+    /// process-level cache — mirrors the AMFI FetchAllNavsAsync pattern.
+    /// Subsequent calls within the TTL return the cached data instantly (no HTTP).
+    /// </summary>
+    Task<Dictionary<string, YahooQuoteDto>> FetchAndCacheGlobalNavsAsync(
+        IEnumerable<string> tickers, CancellationToken ct = default);
 }

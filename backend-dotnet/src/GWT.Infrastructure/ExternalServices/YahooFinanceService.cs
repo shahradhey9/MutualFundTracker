@@ -32,6 +32,15 @@ public class YahooFinanceService : IYahooFinanceService
         = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _searchMemLock = new(1, 1);
 
+    // Process-level global NAV cache — mirrors the AMFI static cache pattern.
+    // Written by the 4-hour background refresh; read on every Global search.
+    // Static so it survives across transient DI scopes (YahooFinanceService is singleton,
+    // but the static keyword makes the intent explicit and guards against future DI changes).
+    private static volatile Dictionary<string, YahooQuoteDto>? _globalNavCache;
+    private static DateTime _globalNavCacheExpiry = DateTime.MinValue;
+    private static readonly SemaphoreSlim _globalNavLock = new(1, 1);
+    private static readonly TimeSpan GlobalNavCacheTtl = TimeSpan.FromHours(4);
+
     private static readonly TimeSpan QuoteCacheTtl  = TimeSpan.FromHours(4);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
@@ -56,6 +65,57 @@ public class YahooFinanceService : IYahooFinanceService
             crumb is not null
                 ? "Yahoo Finance warm-up complete (crumb acquired)."
                 : "Yahoo Finance warm-up: crumb unavailable — will retry on first request.");
+    }
+
+    // ── Global NAV cache ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the current in-memory global NAV snapshot without triggering a network fetch.
+    /// Returns an empty dictionary if the cache has not been populated yet.
+    /// </summary>
+    public Dictionary<string, YahooQuoteDto> GetGlobalNavSnapshot() =>
+        _globalNavCache ?? new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Bulk-fetches live quotes for all provided tickers and stores them in a process-level
+    /// static cache with a 4-hour TTL — mirrors the AMFI FetchAllNavsAsync pattern.
+    /// Subsequent calls within the TTL return the cached data instantly (no HTTP).
+    /// Intended to be called at startup and every 4 hours by the background service.
+    /// </summary>
+    public async Task<Dictionary<string, YahooQuoteDto>> FetchAndCacheGlobalNavsAsync(
+        IEnumerable<string> tickers, CancellationToken ct = default)
+    {
+        // Fast path — return cached data if still fresh
+        if (_globalNavCache is not null && DateTime.UtcNow < _globalNavCacheExpiry)
+            return _globalNavCache;
+
+        await _globalNavLock.WaitAsync(ct);
+        try
+        {
+            // Double-check after acquiring the lock
+            if (_globalNavCache is not null && DateTime.UtcNow < _globalNavCacheExpiry)
+                return _globalNavCache;
+
+            var tickerList = tickers.Distinct().ToList();
+            if (tickerList.Count == 0)
+                return _globalNavCache ?? new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
+
+            _logger.LogInformation("Refreshing global NAV cache — fetching {Count} tickers from Yahoo Finance.", tickerList.Count);
+
+            var quotes = await GetBulkQuotesAsync(tickerList, ct: ct);
+
+            _globalNavCache = quotes;
+            _globalNavCacheExpiry = DateTime.UtcNow.Add(GlobalNavCacheTtl);
+
+            _logger.LogInformation("Global NAV cache refreshed: {Count}/{Total} quotes cached, TTL 4 h.",
+                quotes.Count, tickerList.Count);
+
+            return quotes;
+        }
+        finally
+        {
+            _globalNavLock.Release();
+        }
     }
 
     // ── Search ────────────────────────────────────────────────────────────────

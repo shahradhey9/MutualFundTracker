@@ -1,4 +1,6 @@
+using GWT.Application.Interfaces.Repositories;
 using GWT.Application.Interfaces.Services;
+using GWT.Domain.Enums;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -47,7 +49,9 @@ public class NavSyncBackgroundService : BackgroundService
 
         // Start one independent loop per timezone — all run concurrently
         var loops = KnownTimezones.Select(tz => RunTimezoneLoopAsync(tz, stoppingToken));
-        return Task.WhenAll(loops);
+
+        // Also run a 4-hour global NAV cache refresh loop (independent of midnight syncs)
+        return Task.WhenAll([..loops, RunGlobalNavCacheRefreshLoopAsync(stoppingToken)]);
     }
 
     // ── Per-timezone sync loop ───────────────────────────────────────────────────
@@ -92,6 +96,54 @@ public class NavSyncBackgroundService : BackgroundService
             await svc.SyncGlobalByTimezoneAsync(config.IanaId, ct);
     }
 
+    // ── Global NAV cache refresh loop (every 4 hours) ───────────────────────────
+
+    private static readonly TimeSpan GlobalNavCacheInterval = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// Runs independently of the midnight loops. Immediately warms the global NAV cache
+    /// at startup, then refreshes every 4 hours — same cadence as AMFI's process cache TTL.
+    /// </summary>
+    private async Task RunGlobalNavCacheRefreshLoopAsync(CancellationToken ct)
+    {
+        // Wait for the initial warm-up to finish before the first refresh so we don't
+        // hammer Yahoo twice in quick succession at startup.
+        await Task.Delay(TimeSpan.FromSeconds(30), ct);
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await RefreshGlobalNavCacheAsync(ct);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Global NAV cache refresh failed — retrying in 30 minutes.");
+                await Task.Delay(TimeSpan.FromMinutes(30), ct);
+                continue;
+            }
+
+            await Task.Delay(GlobalNavCacheInterval, ct);
+        }
+    }
+
+    private async Task RefreshGlobalNavCacheAsync(CancellationToken ct)
+    {
+        using var scope   = _scopeFactory.CreateScope();
+        var funds         = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        var allGlobal     = await funds.GetAllByRegionAsync(Region.GLOBAL, ct);
+        var tickers       = allGlobal.Select(f => f.Ticker).Distinct().ToList();
+
+        if (tickers.Count == 0)
+        {
+            _logger.LogInformation("Global NAV cache refresh skipped — no Global funds in fund_meta yet.");
+            return;
+        }
+
+        await _yahoo.FetchAndCacheGlobalNavsAsync(tickers, ct);
+    }
+
     // ── Warm-up ──────────────────────────────────────────────────────────────────
 
     private async Task WarmUpAsync(CancellationToken ct)
@@ -130,7 +182,7 @@ public class NavSyncBackgroundService : BackgroundService
     {
         try
         {
-            await _yahoo.SearchAsync("vanguard", ct);
+            await _yahoo.WarmUpAsync(ct);
             _logger.LogInformation("Yahoo Finance warm-up complete — crumb cached.");
         }
         catch (Exception ex)

@@ -48,15 +48,13 @@ public class FundService : IFundService
 
         if (region == Region.GLOBAL && dbResults.Count > 0)
         {
-            // Fetch live quotes from Yahoo Finance for the matched tickers.
-            // GetBatchQuotesAsync is designed for small sets (≤ 50) and runs requests in parallel.
-            // Failures are swallowed per-ticker — any missing quote falls back to the DB value.
-            var tickers = dbResults.Select(f => f.Ticker).Distinct();
-            var quotes = await _yahoo.GetBatchQuotesAsync(tickers, ct);
-
+            // Read from the in-memory global NAV cache (refreshed every 4 hours by the background service).
+            // This is the same pattern as India using the AMFI cache — no HTTP call per search.
+            // Falls back to the DB value for any ticker not yet in the cache.
+            var navCache = _yahoo.GetGlobalNavSnapshot();
             return dbResults.Select(f =>
             {
-                if (quotes.TryGetValue(f.Ticker, out var q))
+                if (navCache.TryGetValue(f.Ticker, out var q))
                     return new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp);
                 return ToSearchResultDto(f);
             }).ToList();
