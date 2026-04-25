@@ -1,0 +1,10 @@
+# Render CDN cache headers for SPA
+# index.html must never be cached — it references hashed assets that change on every deploy.
+# If the CDN serves a stale index.html, it points to old (non-existent) JS/CSS hashes.
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
+
+# Hashed JS/CSS assets are immutable — cache aggressively.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
