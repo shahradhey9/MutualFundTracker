@@ -118,6 +118,24 @@ public class YahooFinanceService : IYahooFinanceService
         }
     }
 
+    /// <summary>
+    /// Merges already-fetched quotes into the global NAV cache and resets the 4-hour TTL.
+    /// Thread-safe via volatile write on the new dictionary reference.
+    /// </summary>
+    public void MergeGlobalNavCache(Dictionary<string, YahooQuoteDto> quotes)
+    {
+        if (quotes.Count == 0) return;
+
+        var current = _globalNavCache ?? new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
+        var merged  = new Dictionary<string, YahooQuoteDto>(current, StringComparer.OrdinalIgnoreCase);
+        foreach (var (k, v) in quotes) merged[k] = v;
+
+        _globalNavCache        = merged;
+        _globalNavCacheExpiry  = DateTime.UtcNow.Add(GlobalNavCacheTtl);
+
+        _logger.LogInformation("Global NAV cache updated via merge: {Count} total entries.", merged.Count);
+    }
+
     // ── Search ────────────────────────────────────────────────────────────────
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, CancellationToken ct = default)

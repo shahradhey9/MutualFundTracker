@@ -40,4 +40,10 @@ public interface IYahooFinanceService
     /// </summary>
     Task<Dictionary<string, YahooQuoteDto>> FetchAndCacheGlobalNavsAsync(
         IEnumerable<string> tickers, CancellationToken ct = default);
+
+    /// <summary>
+    /// Merges already-fetched quotes into the global NAV cache and resets the 4-hour TTL.
+    /// Called by NavSyncService after a sync so the cache stays warm without a second HTTP fetch.
+    /// </summary>
+    void MergeGlobalNavCache(Dictionary<string, YahooQuoteDto> quotes);
 }

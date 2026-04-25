@@ -106,10 +106,9 @@ public class NavSyncBackgroundService : BackgroundService
     /// </summary>
     private async Task RunGlobalNavCacheRefreshLoopAsync(CancellationToken ct)
     {
-        // Wait for the initial warm-up to finish before the first refresh so we don't
-        // hammer Yahoo twice in quick succession at startup.
-        await Task.Delay(TimeSpan.FromSeconds(30), ct);
-
+        // First run: wait for the startup warm-up (crumb + AMFI) to finish, then immediately
+        // populate the global NAV cache so search shows live prices as soon as possible.
+        await Task.Delay(TimeSpan.FromSeconds(10), ct);
         while (!ct.IsCancellationRequested)
         {
             try

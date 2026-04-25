@@ -115,6 +115,10 @@ public class NavSyncService : INavSyncService
 
         await PersistUpdatesAsync(navUpdates, historyEntries, ct);
 
+        // Keep the in-memory search cache in sync with what we just fetched —
+        // avoids the 4-hour refresh loop having to re-fetch the same quotes.
+        _yahoo.MergeGlobalNavCache(quotes);
+
         sw.Stop();
         _logger.LogInformation(
             "Global NAV sync ({Timezone}) complete: {Updated} funds, {History} history entries in {Elapsed}ms",
