@@ -246,7 +246,7 @@ _ = Task.Run(async () =>
             var existing = await db.Set<GWT.Domain.Entities.FundMeta>()
                                    .CountAsync(f => f.Region == GWT.Domain.Enums.Region.INDIA);
 
-            if (existing > 500)
+            if (existing > 5000)
             {
                 Log.Information("India funds already seeded ({Count} records) — skipping bulk import.", existing);
                 return;

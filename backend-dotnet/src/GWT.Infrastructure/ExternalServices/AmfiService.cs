@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using GWT.Application.DTOs.Funds;
 using GWT.Application.Interfaces.Services;
@@ -34,6 +35,12 @@ public class AmfiService : IAmfiService
     private static DateTime _memCacheExpiry = DateTime.MinValue;
     private static readonly SemaphoreSlim _fetchLock = new(1, 1);
 
+    // In-memory search result cache — keyed by lower-cased query string.
+    // Eliminates the 7000-item linear scan for repeated / debounced queries.
+    // Cleared whenever the nav cache is refreshed so results never go stale.
+    private static readonly ConcurrentDictionary<string, List<FundSearchResultDto>> _searchMemCache
+        = new(StringComparer.OrdinalIgnoreCase);
+
     public AmfiService(HttpClient http, ICacheService cache, ILogger<AmfiService> logger)
     {
         _http = http;
@@ -43,15 +50,17 @@ public class AmfiService : IAmfiService
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, CancellationToken ct = default)
     {
-        var cacheKey = CacheKeySearch + query.ToLowerInvariant();
-        var cached = await _cache.GetAsync<List<FundSearchResultDto>>(cacheKey, ct);
-        if (cached is not null) return cached;
+        var queryKey = query.Trim().ToLowerInvariant();
+
+        // 1. Process-level in-memory search cache (fastest — zero I/O, zero iteration).
+        //    Populated on first search, cleared whenever the nav cache refreshes.
+        if (_searchMemCache.TryGetValue(queryKey, out var memHit))
+            return memHit;
 
         var allNavs = await FetchAllNavsAsync(ct);
 
-        // Split query into words; every word must appear somewhere in the fund name or AMC.
-        // This lets "hdfc mid cap" match "HDFC Mid-Cap Opportunities Fund - Direct Growth"
-        // even though "hdfc mid cap" is not a continuous substring of the name.
+        // 2. Word-by-word scan — every word must appear in the fund name, AMC, or scheme code.
+        //    "hdfc mid cap" matches "HDFC Mid-Cap Opportunities Fund - Direct Growth".
         var words = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         var results = allNavs
@@ -69,7 +78,9 @@ public class AmfiService : IAmfiService
                 NavDate: f.NavDate))
             .ToList();
 
-        await _cache.SetAsync(cacheKey, results, SearchCacheTtl, ct);
+        // 3. Store in process-level cache and attempt Redis (no-op on Render free tier).
+        _searchMemCache[queryKey] = results;
+        await _cache.SetAsync(CacheKeySearch + queryKey, results, SearchCacheTtl, ct);
         return results;
     }
 
@@ -125,6 +136,9 @@ public class AmfiService : IAmfiService
 
             _memCache = parsed;
             _memCacheExpiry = DateTime.UtcNow.Add(NavCacheTtl);
+
+            // Evict stale search results — they reference NAVs from the old data.
+            _searchMemCache.Clear();
 
             await _cache.SetAsync(CacheKeyAll, parsed, NavCacheTtl, ct);
             _logger.LogInformation("AMFI NAVAll.txt parsed: {Count} Growth plan entries", parsed.Count);
