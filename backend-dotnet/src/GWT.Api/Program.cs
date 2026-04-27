@@ -246,11 +246,18 @@ _ = Task.Run(async () =>
             var existing = await db.Set<GWT.Domain.Entities.FundMeta>()
                                    .CountAsync(f => f.Region == GWT.Domain.Enums.Region.INDIA);
 
-            if (existing > 5000)
+            // Skip only when every fund from the AMFI file is already in fund_meta.
+            // A fixed threshold (e.g. > 5000) wrongly skips the seed when, say,
+            // 5500 records exist but AXIS / SBI are still absent from the initial batch.
+            if (existing >= amfiFunds.Count)
             {
-                Log.Information("India funds already seeded ({Count} records) — skipping bulk import.", existing);
+                Log.Information("India funds fully seeded ({Count} records) — skipping bulk import.", existing);
                 return;
             }
+
+            Log.Information(
+                "India fund_meta has {Existing} records but AMFI has {Total} — running full upsert to fill gaps.",
+                existing, amfiFunds.Count);
 
             var repo     = s.ServiceProvider.GetRequiredService<GWT.Application.Interfaces.Repositories.IFundMetaRepository>();
             var entities = amfiFunds.Select(f => new GWT.Domain.Entities.FundMeta

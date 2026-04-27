@@ -132,8 +132,11 @@ public class NavSyncBackgroundService : BackgroundService
     }
 
     /// <summary>
-    /// Fetches the latest AMFI NAVAll.txt, updates the in-memory AMFI cache,
-    /// and persists all ~7 000 India fund NAVs to fund_meta.
+    /// Fetches the latest AMFI NAVAll.txt, updates the in-memory AMFI cache, and
+    /// bulk-upserts all ~7 000 India fund rows into fund_meta.
+    /// Uses BulkUpsertFundsAsync (not UpdateNavBatchAsync) so that any fund missing
+    /// from fund_meta — e.g. AXIS, SBI, or any AMC absent from the initial seed —
+    /// is automatically inserted on the next 30-minute cycle.
     /// </summary>
     private async Task RefreshIndiaNavCacheAsync(CancellationToken ct)
     {
@@ -144,10 +147,23 @@ public class NavSyncBackgroundService : BackgroundService
         var allNavs = await amfi.FetchAllNavsAsync(ct);
         if (allNavs.Count == 0) return;
 
-        _logger.LogInformation("India NAV refresh: persisting {Count} NAVs to fund_meta.", allNavs.Count);
+        _logger.LogInformation("India NAV refresh: upserting {Count} funds into fund_meta.", allNavs.Count);
 
-        var updates = allNavs.Select(f => ($"IN-{f.SchemeCode}", f.Nav, f.NavDate));
-        await fundRepo.UpdateNavBatchAsync(updates, ct);
+        var entities = allNavs.Select(f => new GWT.Domain.Entities.FundMeta
+        {
+            Id         = $"IN-{f.SchemeCode}",
+            Region     = GWT.Domain.Enums.Region.INDIA,
+            Name       = f.SchemeName,
+            Amc        = f.Amc,
+            Ticker     = $"AMFI-{f.SchemeCode}",
+            SchemeCode = f.SchemeCode,
+            Isin       = f.Isin,
+            Timezone   = "Asia/Kolkata",
+            LatestNav  = f.Nav,
+            NavDate    = f.NavDate,
+            UpdatedAt  = DateTime.UtcNow,
+        });
+        await fundRepo.BulkUpsertFundsAsync(entities, ct);
     }
 
     /// <summary>
