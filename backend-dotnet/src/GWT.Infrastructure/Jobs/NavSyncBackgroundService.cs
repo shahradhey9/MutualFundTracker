@@ -103,8 +103,9 @@ public class NavSyncBackgroundService : BackgroundService
 
     /// <summary>
     /// Refreshes both India (AMFI) and Global (Yahoo Finance) NAV caches every 30 minutes.
-    /// Each refresh updates the in-memory cache AND persists the latest NAVs to fund_meta,
-    /// so fund_meta is the always-current master table for all fund prices.
+    /// Each refresh updates the in-memory cache AND persists the latest NAVs to fund_meta.
+    /// India and Global are run in parallel but with independent error handling — a failure
+    /// in one does not prevent the other from completing.
     /// </summary>
     private async Task RunNavCacheRefreshLoopAsync(CancellationToken ct)
     {
@@ -112,42 +113,71 @@ public class NavSyncBackgroundService : BackgroundService
         await Task.Delay(TimeSpan.FromSeconds(10), ct);
         while (!ct.IsCancellationRequested)
         {
-            try
-            {
-                // Run India and Global refreshes in parallel.
-                await Task.WhenAll(
-                    RefreshIndiaNavCacheAsync(ct),
-                    RefreshGlobalNavCacheAsync(ct));
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "NAV cache refresh failed — retrying in 30 minutes.");
-                await Task.Delay(NavCacheRefreshInterval, ct);
-                continue;
-            }
+            // Run India and Global in parallel, each guarded independently so a failure
+            // in one region never silences the other.
+            await Task.WhenAll(
+                RunWithGuardAsync("India", RefreshIndiaNavCacheAsync, ct),
+                RunWithGuardAsync("Global", RefreshGlobalNavCacheAsync, ct));
 
-            await Task.Delay(NavCacheRefreshInterval, ct);
+            try { await Task.Delay(NavCacheRefreshInterval, ct); }
+            catch (OperationCanceledException) { break; }
         }
     }
 
     /// <summary>
-    /// Fetches the latest AMFI NAVAll.txt, updates the in-memory AMFI cache, and
-    /// bulk-upserts all ~7 000 India fund rows into fund_meta.
-    /// Uses BulkUpsertFundsAsync (not UpdateNavBatchAsync) so that any fund missing
-    /// from fund_meta — e.g. AXIS, SBI, or any AMC absent from the initial seed —
-    /// is automatically inserted on the next 30-minute cycle.
+    /// Runs <paramref name="refresh"/> and logs any exception without re-throwing,
+    /// so a failure in one region's refresh never cancels the sibling task.
+    /// </summary>
+    private async Task RunWithGuardAsync(
+        string region,
+        Func<CancellationToken, Task> refresh,
+        CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return;
+        try
+        {
+            await refresh(ct);
+        }
+        catch (OperationCanceledException) { /* shutting down — expected */ }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "{Region} NAV cache refresh failed — in-memory and fund_meta may be stale until next cycle.",
+                region);
+        }
+    }
+
+    /// <summary>
+    /// Force-fetches the latest AMFI NAVAll.txt (bypasses TTL), updates the in-memory
+    /// AMFI cache, then bulk-upserts all ~7 000 India fund rows into fund_meta.
+    ///
+    /// ForceRefreshAsync is used (not FetchAllNavsAsync) so every 30-minute cycle always
+    /// pulls a fresh file from AMFI regardless of the cache TTL.  This guarantees that
+    /// both the in-memory cache and fund_meta are updated with the same data atomically.
+    ///
+    /// BulkUpsertFundsAsync (INSERT … ON CONFLICT DO UPDATE) is used instead of
+    /// UpdateNavBatchAsync so any fund missing from fund_meta — e.g. a new AMC launch
+    /// or a fund not present at initial seed — is automatically inserted.
     /// </summary>
     private async Task RefreshIndiaNavCacheAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
-        var amfi        = scope.ServiceProvider.GetRequiredService<IAmfiService>();
-        var fundRepo    = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        var amfi     = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+        var fundRepo = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
 
-        var allNavs = await amfi.FetchAllNavsAsync(ct);
-        if (allNavs.Count == 0) return;
+        // Force-refresh bypasses the TTL and re-fetches from AMFI unconditionally.
+        // This also clears _searchMemCache so stale search results are evicted.
+        _logger.LogInformation("India NAV refresh: force-fetching AMFI NAVAll.txt …");
+        var allNavs = await amfi.ForceRefreshAsync(ct);
 
-        _logger.LogInformation("India NAV refresh: upserting {Count} funds into fund_meta.", allNavs.Count);
+        if (allNavs.Count == 0)
+        {
+            _logger.LogWarning("India NAV refresh: AMFI returned 0 funds — skipping fund_meta update.");
+            return;
+        }
+
+        _logger.LogInformation(
+            "India NAV refresh: AMFI returned {Count} funds — upserting into fund_meta …", allNavs.Count);
 
         var entities = allNavs.Select(f => new GWT.Domain.Entities.FundMeta
         {
@@ -163,7 +193,11 @@ public class NavSyncBackgroundService : BackgroundService
             NavDate    = f.NavDate,
             UpdatedAt  = DateTime.UtcNow,
         });
+
         await fundRepo.BulkUpsertFundsAsync(entities, ct);
+
+        _logger.LogInformation(
+            "India NAV refresh complete: {Count} funds updated in memory and fund_meta.", allNavs.Count);
     }
 
     /// <summary>

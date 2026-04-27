@@ -76,6 +76,14 @@ public class YahooFinanceService : IYahooFinanceService
     public Dictionary<string, YahooQuoteDto> GetGlobalNavSnapshot() =>
         _globalNavCache ?? new Dictionary<string, YahooQuoteDto>(StringComparer.OrdinalIgnoreCase);
 
+    public List<FundSearchResultDto>? TryGetSearchFromCache(string query)
+    {
+        var memKey = query.ToLowerInvariant();
+        if (_searchMem.TryGetValue(memKey, out var entry) && DateTime.UtcNow < entry.Expiry)
+            return entry.Results;
+        return null;
+    }
+
     /// <summary>
     /// Bulk-fetches live quotes for all provided tickers and stores them in a process-level
     /// static cache with a 4-hour TTL — mirrors the AMFI FetchAllNavsAsync pattern.

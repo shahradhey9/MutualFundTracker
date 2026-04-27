@@ -34,6 +34,12 @@ public interface IYahooFinanceService
     Dictionary<string, YahooQuoteDto> GetGlobalNavSnapshot();
 
     /// <summary>
+    /// Returns cached search results for <paramref name="query"/> from the in-memory search cache
+    /// without triggering any network or Redis fetch. Returns null if not cached.
+    /// </summary>
+    List<FundSearchResultDto>? TryGetSearchFromCache(string query);
+
+    /// <summary>
     /// Bulk-fetches live quotes for all provided tickers and stores them in a 4-hour
     /// process-level cache — mirrors the AMFI FetchAllNavsAsync pattern.
     /// Subsequent calls within the TTL return the cached data instantly (no HTTP).

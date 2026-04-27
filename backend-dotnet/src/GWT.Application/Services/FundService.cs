@@ -28,40 +28,55 @@ public class FundService : IFundService
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default)
     {
-        // Primary path: fund_meta is the master NAV table, kept fresh every 30 minutes.
-        var dbResults = await _funds.SearchAsync(query, region, ct: ct);
-        _logger.LogDebug("{Region} search '{Query}' → {Count} results from fund_meta", region, query, dbResults.Count);
-
-        if (dbResults.Count > 0)
-        {
-            // For Global, overlay the in-memory Yahoo snapshot (fractionally fresher than DB).
-            if (region == Region.GLOBAL)
-            {
-                var navCache = _yahoo.GetGlobalNavSnapshot();
-                return dbResults.Select(f =>
-                {
-                    if (navCache.TryGetValue(f.Ticker, out var q))
-                        return new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp);
-                    return ToSearchResultDto(f);
-                }).ToList();
-            }
-
-            return dbResults.Select(ToSearchResultDto).ToList();
-        }
-
-        // Fallback: fund not in master table yet — pull directly from source.
-        // This handles the window between first startup and the 30-min seed completing,
-        // or any fund that hasn't been indexed yet.
-        _logger.LogInformation("{Region} search '{Query}' — no results in fund_meta, falling back to live source.", region, query);
-
         if (region == Region.INDIA)
         {
-            // AMFI in-memory cache holds all ~7000 Growth plan funds — no HTTP needed.
-            return await _amfi.SearchAsync(query, ct);
-        }
+            // 1. AMFI in-memory cache — ~7000 Growth-plan funds with the freshest NAVs
+            //    (updated every 30 min). Falls back to live HTTP only during the cold-start
+            //    window before the first fetch completes.
+            var memResults = await _amfi.SearchAsync(query, ct);
+            if (memResults.Count > 0)
+            {
+                _logger.LogDebug("India search '{Query}' → {Count} results from AMFI memory cache", query, memResults.Count);
+                return memResults;
+            }
 
-        // Global fallback: live Yahoo Finance search.
-        return await _yahoo.SearchAsync(query, ct);
+            // 2. fund_meta DB — catches any fund persisted via EnsureFund that isn't in the
+            //    standard AMFI Growth list (e.g. legacy or dividend plans).
+            var dbResults = await _funds.SearchAsync(query, region, ct: ct);
+            _logger.LogDebug("India search '{Query}' → {Count} results from fund_meta DB (memory miss)", query, dbResults.Count);
+            return dbResults.Select(ToSearchResultDto).ToList();
+        }
+        else // GLOBAL
+        {
+            var navSnapshot = _yahoo.GetGlobalNavSnapshot();
+
+            // 1. Yahoo in-memory search cache — populated by prior searches, zero I/O.
+            //    Overlay with the latest prices from the global NAV snapshot.
+            var memResults = _yahoo.TryGetSearchFromCache(query);
+            if (memResults is { Count: > 0 })
+            {
+                _logger.LogDebug("Global search '{Query}' → {Count} results from Yahoo memory cache", query, memResults.Count);
+                return memResults.Select(r =>
+                    navSnapshot.TryGetValue(r.Ticker, out var q)
+                        ? r with { LatestNav = q.Price, NavDate = q.Timestamp }
+                        : r).ToList();
+            }
+
+            // 2. fund_meta DB — name-searchable catalogue with NAV snapshot overlay.
+            var dbResults = await _funds.SearchAsync(query, region, ct: ct);
+            if (dbResults.Count > 0)
+            {
+                _logger.LogDebug("Global search '{Query}' → {Count} results from fund_meta DB", query, dbResults.Count);
+                return dbResults.Select(f =>
+                    navSnapshot.TryGetValue(f.Ticker, out var q)
+                        ? new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp)
+                        : ToSearchResultDto(f)).ToList();
+            }
+
+            // 3. Live Yahoo Finance search — also populates the search cache for next time.
+            _logger.LogInformation("Global search '{Query}' — nothing in cache or DB, falling back to live Yahoo.", query);
+            return await _yahoo.SearchAsync(query, ct);
+        }
     }
 
     private static FundSearchResultDto ToSearchResultDto(FundMeta f) =>
