@@ -28,31 +28,40 @@ public class FundService : IFundService
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default)
     {
-        // Both India and Global search against fund_meta (the master NAV table).
-        // fund_meta is kept up-to-date by the 30-minute background refresh loop, so
-        // search results always reflect NAVs that are at most 30 minutes old.
+        // Primary path: fund_meta is the master NAV table, kept fresh every 30 minutes.
         var dbResults = await _funds.SearchAsync(query, region, ct: ct);
         _logger.LogDebug("{Region} search '{Query}' → {Count} results from fund_meta", region, query, dbResults.Count);
 
-        if (dbResults.Count == 0)
-            return [];
-
-        // For Global funds, overlay the in-memory Yahoo snapshot — it may be fractionally
-        // fresher than the DB row (written seconds after the in-memory update).
-        if (region == Region.GLOBAL)
+        if (dbResults.Count > 0)
         {
-            var navCache = _yahoo.GetGlobalNavSnapshot();
-            return dbResults.Select(f =>
+            // For Global, overlay the in-memory Yahoo snapshot (fractionally fresher than DB).
+            if (region == Region.GLOBAL)
             {
-                if (navCache.TryGetValue(f.Ticker, out var q))
-                    return new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp);
-                return ToSearchResultDto(f);
-            }).ToList();
+                var navCache = _yahoo.GetGlobalNavSnapshot();
+                return dbResults.Select(f =>
+                {
+                    if (navCache.TryGetValue(f.Ticker, out var q))
+                        return new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp);
+                    return ToSearchResultDto(f);
+                }).ToList();
+            }
+
+            return dbResults.Select(ToSearchResultDto).ToList();
         }
 
-        // For India, the DB NAV is authoritative — AMFI publishes once per day and the
-        // background refresh writes the value to fund_meta within 30 minutes of publication.
-        return dbResults.Select(ToSearchResultDto).ToList();
+        // Fallback: fund not in master table yet — pull directly from source.
+        // This handles the window between first startup and the 30-min seed completing,
+        // or any fund that hasn't been indexed yet.
+        _logger.LogInformation("{Region} search '{Query}' — no results in fund_meta, falling back to live source.", region, query);
+
+        if (region == Region.INDIA)
+        {
+            // AMFI in-memory cache holds all ~7000 Growth plan funds — no HTTP needed.
+            return await _amfi.SearchAsync(query, ct);
+        }
+
+        // Global fallback: live Yahoo Finance search.
+        return await _yahoo.SearchAsync(query, ct);
     }
 
     private static FundSearchResultDto ToSearchResultDto(FundMeta f) =>
