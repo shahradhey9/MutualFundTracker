@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using FluentValidation;
 using GWT.Application.DTOs.Funds;
+using GWT.Application.Interfaces.Repositories;
 using GWT.Application.Interfaces.Services;
 using GWT.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -12,11 +14,25 @@ namespace GWT.Api.Controllers;
 public class FundsController : ControllerBase
 {
     private readonly IFundService _funds;
+    private readonly IAmfiService _amfi;
+    private readonly IYahooFinanceService _yahoo;
+    private readonly IFundMetaRepository _fundMeta;
+    private readonly IPortfolioService _portfolio;
     private readonly IValidator<EnsureFundRequestDto> _ensureValidator;
 
-    public FundsController(IFundService funds, IValidator<EnsureFundRequestDto> ensureValidator)
+    public FundsController(
+        IFundService funds,
+        IAmfiService amfi,
+        IYahooFinanceService yahoo,
+        IFundMetaRepository fundMeta,
+        IPortfolioService portfolio,
+        IValidator<EnsureFundRequestDto> ensureValidator)
     {
         _funds = funds;
+        _amfi = amfi;
+        _yahoo = yahoo;
+        _fundMeta = fundMeta;
+        _portfolio = portfolio;
         _ensureValidator = ensureValidator;
     }
 
@@ -44,6 +60,39 @@ public class FundsController : ControllerBase
     {
         var nav = await _funds.GetNavAsync(ticker, region, ct);
         return Ok(nav);
+    }
+
+    /// <summary>
+    /// Force-refresh the in-memory NAV caches for both India (AMFI) and Global (Yahoo Finance)
+    /// immediately, bypassing the normal 30-minute TTL. Also evicts this user's portfolio cache
+    /// so the next portfolio fetch returns prices from the freshly-populated NAV caches.
+    /// Requires a valid JWT — no admin key needed.
+    /// </summary>
+    [HttpPost("refresh-nav")]
+    [Authorize]
+    public async Task<IActionResult> RefreshNav(CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                          ?? User.FindFirst("sub")?.Value;
+
+        // Run India (AMFI) and Global (Yahoo) refreshes in parallel.
+        var amfiTask = _amfi.ForceRefreshAsync(ct);
+
+        var yahooTask = Task.Run(async () =>
+        {
+            var globalFunds = await _fundMeta.GetAllByRegionAsync(Region.GLOBAL, ct);
+            var tickers = globalFunds.Select(f => f.Ticker).Distinct();
+            await _yahoo.ForceRefreshGlobalNavsAsync(tickers, ct);
+        }, ct);
+
+        await Task.WhenAll(amfiTask, yahooTask);
+
+        // Evict this user's cached portfolio response so the next GET /portfolio
+        // rebuilds from the freshly populated NAV caches.
+        if (Guid.TryParse(userIdClaim, out var userId))
+            _portfolio.InvalidateUserCache(userId);
+
+        return Ok(new { success = true, refreshedAt = DateTime.UtcNow });
     }
 
     /// <summary>Upsert a fund into the catalogue (required before adding a holding).</summary>

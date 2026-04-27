@@ -118,8 +118,16 @@ public class YahooFinanceService : IYahooFinanceService
         }
     }
 
+    public async Task<Dictionary<string, YahooQuoteDto>> ForceRefreshGlobalNavsAsync(
+        IEnumerable<string> tickers, CancellationToken ct = default)
+    {
+        // Reset expiry so FetchAndCacheGlobalNavsAsync bypasses the fast-path and re-fetches.
+        _globalNavCacheExpiry = DateTime.MinValue;
+        return await FetchAndCacheGlobalNavsAsync(tickers, ct);
+    }
+
     /// <summary>
-    /// Merges already-fetched quotes into the global NAV cache and resets the 4-hour TTL.
+    /// Merges already-fetched quotes into the global NAV cache and resets the TTL.
     /// Thread-safe via volatile write on the new dictionary reference.
     /// </summary>
     public void MergeGlobalNavCache(Dictionary<string, YahooQuoteDto> quotes)

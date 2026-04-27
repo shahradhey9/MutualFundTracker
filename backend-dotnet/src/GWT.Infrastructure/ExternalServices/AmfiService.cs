@@ -100,6 +100,13 @@ public class AmfiService : IAmfiService
         return true;
     }
 
+    public async Task<List<AmfiFundRawDto>> ForceRefreshAsync(CancellationToken ct = default)
+    {
+        // Reset expiry so FetchAllNavsAsync bypasses the fast-path and re-fetches from AMFI.
+        _memCacheExpiry = DateTime.MinValue;
+        return await FetchAllNavsAsync(ct);
+    }
+
     public async Task<decimal?> GetNavAsync(string schemeCode, CancellationToken ct = default)
     {
         var allNavs = await FetchAllNavsAsync(ct);

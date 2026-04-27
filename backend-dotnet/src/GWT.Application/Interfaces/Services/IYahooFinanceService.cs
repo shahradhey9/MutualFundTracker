@@ -42,8 +42,15 @@ public interface IYahooFinanceService
         IEnumerable<string> tickers, CancellationToken ct = default);
 
     /// <summary>
-    /// Merges already-fetched quotes into the global NAV cache and resets the 4-hour TTL.
+    /// Merges already-fetched quotes into the global NAV cache and resets the TTL.
     /// Called by NavSyncService after a sync so the cache stays warm without a second HTTP fetch.
     /// </summary>
     void MergeGlobalNavCache(Dictionary<string, YahooQuoteDto> quotes);
+
+    /// <summary>
+    /// Bypasses the TTL check and forces an immediate re-fetch from Yahoo Finance for all
+    /// provided tickers, then replaces the process-level cache. Use for on-demand refresh.
+    /// </summary>
+    Task<Dictionary<string, YahooQuoteDto>> ForceRefreshGlobalNavsAsync(
+        IEnumerable<string> tickers, CancellationToken ct = default);
 }

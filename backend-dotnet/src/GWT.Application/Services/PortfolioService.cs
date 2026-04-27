@@ -159,6 +159,8 @@ public class PortfolioService : IPortfolioService
         _logger.LogInformation("Holding {HoldingId} deleted for user {UserId}", holdingId, userId);
     }
 
+    public void InvalidateUserCache(Guid userId) => _memCache.TryRemove(userId, out _);
+
     private static HoldingDto ToDto(Holding h) =>
         new(h.Id, h.FundId, h.Units, h.AvgCost, h.PurchaseAt, h.CreatedAt, h.UpdatedAt);
 }

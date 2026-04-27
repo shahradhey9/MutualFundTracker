@@ -81,6 +81,18 @@ export function useFundNav(ticker, region) {
   });
 }
 
+// ── On-demand NAV refresh ────────────────────────────────────────────────────
+export function useRefreshNav() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/funds/refresh-nav');
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.portfolio }),
+  });
+}
+
 // ── Fund search ──────────────────────────────────────────────────────────────
 export function useFundSearch(query, region) {
   return useQuery({
