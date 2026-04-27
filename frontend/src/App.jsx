@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from './lib/api.js';
 import { useUIStore } from './lib/store.js';
 import { useAuth } from './hooks/useAuth.js';
+import { useRefreshNav } from './hooks/usePortfolio.js';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { LoadingSpinner } from './components/LoadingSpinner.jsx';
 import { LoadingOverlay } from './components/LoadingOverlay.jsx';
@@ -104,16 +105,35 @@ function TopBar() {
   const { activeTab } = useUIStore();
   const titles = { portfolio: 'Portfolio', add: 'Add Holding', upload: 'Upload CSV', analytics: 'Analytics' };
   const today = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const { mutate: refreshNav, isPending: isRefreshing } = useRefreshNav();
   return (
     <>
       <style>{`
         .topbar{height:54px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--bg-card);flex-shrink:0}
         .topbar-title{font-size:14px;font-weight:600;color:var(--text-primary)}
         .topbar-date{font-size:11px;color:var(--text-muted);font-family:var(--font-mono)}
+        .refresh-nav-btn{display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 12px;border-radius:var(--radius-md);border:1.5px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-family:var(--font-sans);transition:all .15s}
+        .refresh-nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
+        .refresh-nav-btn:disabled{opacity:.55;cursor:not-allowed}
       `}</style>
       <div className="topbar">
         <span className="topbar-title">{titles[activeTab] || 'Dashboard'}</span>
-        <span className="topbar-date">{today}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+          <button
+            className="refresh-nav-btn"
+            onClick={() => refreshNav()}
+            disabled={isRefreshing}
+            title="Force-refresh NAV rates from AMFI and Yahoo Finance"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ animation: isRefreshing ? 'gwt-spin 0.8s linear infinite' : 'none', flexShrink:0 }}>
+              <path d="M13.5 2.5A7 7 0 1 0 14 8" />
+              <polyline points="14 2 14 6 10 6" />
+            </svg>
+            {isRefreshing ? 'Refreshing…' : 'Refresh NAV'}
+          </button>
+          <span className="topbar-date">{today}</span>
+        </div>
       </div>
     </>
   );

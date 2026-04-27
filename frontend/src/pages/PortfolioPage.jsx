@@ -1,4 +1,4 @@
-import { usePortfolio, useRefreshNav } from '../hooks/usePortfolio.js';
+import { usePortfolio } from '../hooks/usePortfolio.js';
 import { useDisplayRates } from '../hooks/useDisplayRates.js';
 import { HoldingsTable } from '../components/HoldingsTable.jsx';
 import { CurrencySelector } from '../components/CurrencySelector.jsx';
@@ -45,21 +45,20 @@ function StatCard({ label, value, sub, subPositive, accent }) {
   );
 }
 
-function SyncPill({ isFetching, dataUpdatedAt, inrPerUsd, hasHoldings, onRefresh, isRefreshing }) {
+function SyncPill({ isFetching, dataUpdatedAt, inrPerUsd, hasHoldings }) {
   const time = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : null;
-  const busy = isFetching || isRefreshing;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, flexWrap: 'wrap' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: 'var(--text-muted)' }}>
         <div style={{
           width: 7, height: 7, borderRadius: '50%',
-          background: busy ? 'var(--color-warn)' : 'var(--color-gain)',
-          boxShadow: busy ? '0 0 0 3px rgba(217,119,6,0.2)' : '0 0 0 3px rgba(22,163,74,0.2)',
+          background: isFetching ? 'var(--color-warn)' : 'var(--color-gain)',
+          boxShadow: isFetching ? '0 0 0 3px rgba(217,119,6,0.2)' : '0 0 0 3px rgba(22,163,74,0.2)',
           transition: 'background 0.3s',
         }} />
-        {isRefreshing ? 'Refreshing NAV rates…' : isFetching ? 'Syncing…' : time ? `Synced at ${time}` : 'Loading…'}
+        {isFetching ? 'Syncing…' : time ? `Synced at ${time}` : 'Loading…'}
       </div>
       {hasHoldings && (
         <div style={{
@@ -74,20 +73,6 @@ function SyncPill({ isFetching, dataUpdatedAt, inrPerUsd, hasHoldings, onRefresh
         </div>
       )}
       <CurrencySelector />
-      <button
-        className="btn btn-secondary"
-        onClick={onRefresh}
-        disabled={busy}
-        style={{ fontSize: 12, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 6 }}
-        title="Force-refresh NAV rates from AMFI and Yahoo Finance"
-      >
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          style={{ animation: isRefreshing ? 'gwt-spin 0.8s linear infinite' : 'none' }}>
-          <path d="M13.5 2.5A7 7 0 1 0 14 8" />
-          <polyline points="14 2 14 6 10 6" />
-        </svg>
-        {isRefreshing ? 'Refreshing…' : 'Refresh NAV'}
-      </button>
     </div>
   );
 }
@@ -103,8 +88,6 @@ function SkeletonTable() {
 export function PortfolioPage() {
   const { data: holdings = [], isFetching, isLoading, dataUpdatedAt, isError, error } = usePortfolio();
   const { displayCurrency, convert, inrPerUsd } = useDisplayRates();
-  const { mutate: refreshNav, isPending: isRefreshing } = useRefreshNav();
-
   if (isError) {
     return (
       <div style={{
@@ -136,8 +119,6 @@ export function PortfolioPage() {
         dataUpdatedAt={dataUpdatedAt}
         inrPerUsd={inrPerUsd}
         hasHoldings={holdings.length > 0}
-        onRefresh={refreshNav}
-        isRefreshing={isRefreshing}
       />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 14, marginBottom: 24 }}>
