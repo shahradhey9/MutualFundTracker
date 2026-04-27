@@ -47,45 +47,113 @@ function Sidebar({ user, onLogout }) {
   return (
     <>
       <style>{`
-        .sidebar{width:224px;flex-shrink:0;background:var(--bg-card);border-right:1px solid var(--border-light);display:flex;flex-direction:column;height:100vh;position:sticky;top:0;box-shadow:1px 0 0 var(--border-light)}
-        .nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);cursor:pointer;font-size:13px;font-weight:400;color:var(--text-secondary);transition:background .12s,color .12s;border:1px solid transparent;background:none;width:100%;text-align:left;font-family:var(--font-sans)}
-        .nav-item:hover{background:var(--bg-hover);color:var(--text-primary)}
-        .nav-item.active{background:var(--accent-light);color:var(--accent);font-weight:500;border-color:var(--border-focus)}
-        .nav-item.active svg{color:var(--accent)}
-        .sidebar-footer{padding:14px 16px;border-top:1px solid var(--border-light);margin-top:auto}
-        .user-avatar{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-        .user-name{font-size:13px;font-weight:500;color:var(--text-primary)}
-        .user-email{font-size:11px;color:var(--text-muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;font-family:var(--font-mono)}
-        .logout-btn{background:none;border:1px solid var(--border-light);cursor:pointer;color:var(--text-muted);font-size:16px;padding:4px 7px;line-height:1;border-radius:var(--radius-sm);transition:all .12s;font-family:inherit}
-        .logout-btn:hover{border-color:var(--color-loss);color:var(--color-loss);background:var(--color-loss-bg)}
-        .brand-text{font-size:14px;font-weight:600;color:var(--text-primary);letter-spacing:-0.01em}
-        .brand-sub{font-size:10px;color:var(--text-muted);margin-top:1px;font-family:var(--font-mono)}
-        .nav-section{font-size:10px;font-weight:600;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;padding:0 8px;margin-bottom:4px;margin-top:8px}
+        .sidebar {
+          width: 240px; flex-shrink: 0;
+          background: var(--sidebar-bg);
+          display: flex; flex-direction: column;
+          height: 100vh; position: sticky; top: 0;
+          box-shadow: 4px 0 20px rgba(37,37,71,0.18);
+        }
+        .sidebar-brand {
+          display: flex; align-items: center; gap: 12px;
+          padding: 22px 20px 18px;
+          border-bottom: 1px solid var(--sidebar-border);
+        }
+        .sidebar-logo {
+          width: 38px; height: 38px; border-radius: 10px;
+          background: var(--sidebar-brand-bg);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+        .sidebar-brand-text { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
+        .sidebar-brand-sub  { font-size: 10px; color: var(--sidebar-text); margin-top: 1px; }
+        .sidebar-section {
+          font-size: 10px; font-weight: 700; letter-spacing: .1em;
+          text-transform: uppercase; color: var(--sidebar-section);
+          padding: 20px 20px 6px;
+        }
+        .nav-item {
+          display: flex; align-items: center; gap: 12px;
+          padding: 10px 20px; cursor: pointer;
+          font-size: 13px; font-weight: 500;
+          color: var(--sidebar-text);
+          transition: background .15s, color .15s;
+          border: none; background: none;
+          width: 100%; text-align: left;
+          font-family: var(--font-sans);
+          position: relative;
+        }
+        .nav-item:hover { background: var(--sidebar-bg-hover); color: var(--sidebar-text-active); }
+        .nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-text-active); }
+        .nav-item.active::before {
+          content: '';
+          position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+          width: 4px; height: 22px; border-radius: 0 4px 4px 0;
+          background: var(--sidebar-active-dot);
+        }
+        .nav-item.active .nav-dot {
+          background: var(--sidebar-active-dot);
+          box-shadow: 0 0 8px rgba(245,166,35,0.6);
+        }
+        .nav-dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: transparent; flex-shrink: 0;
+          transition: background .15s;
+          margin-left: auto;
+        }
+        .nav-item:hover .nav-dot { background: var(--sidebar-text); }
+        .sidebar-footer {
+          padding: 16px 20px; border-top: 1px solid var(--sidebar-border);
+          margin-top: auto;
+        }
+        .user-avatar {
+          width: 34px; height: 34px; border-radius: 50%;
+          background: linear-gradient(135deg,#7c6fcd,#f5a623);
+          color: #fff; font-size: 13px; font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .user-name  { font-size: 13px; font-weight: 600; color: #fff; }
+        .user-email { font-size: 10px; color: var(--sidebar-text); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 116px; }
+        .logout-btn {
+          background: none; border: 1px solid rgba(255,255,255,0.15);
+          cursor: pointer; color: var(--sidebar-text);
+          font-size: 14px; padding: 4px 8px; line-height: 1;
+          border-radius: var(--radius-sm); transition: all .15s; font-family: inherit;
+          margin-left: auto; flex-shrink: 0;
+        }
+        .logout-btn:hover { border-color: #f12b2c; color: #f12b2c; }
       `}</style>
       <div className="sidebar">
-        <div style={{ padding:'20px 16px 16px', borderBottom:'1px solid var(--border-light)' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:32, height:32, borderRadius:8, background:'#2563eb', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M8 1L13 6H9.5V15H6.5V6H3L8 1Z" fill="white"/>
-              </svg>
-            </div>
-            <div>
-              <div className="brand-text">GWT</div>
-              <div className="brand-sub">Global Wealth Tracker</div>
-            </div>
+        {/* Brand */}
+        <div className="sidebar-brand">
+          <div className="sidebar-logo">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M4 16V8l6-5 6 5v8H12v-5H8v5H4z" fill="white" opacity=".9"/>
+              <circle cx="10" cy="7" r="1.5" fill="#f5a623"/>
+            </svg>
+          </div>
+          <div>
+            <div className="sidebar-brand-text">GWT</div>
+            <div className="sidebar-brand-sub">Global Wealth Tracker</div>
           </div>
         </div>
-        <nav style={{ padding:'12px 8px', flex:1, overflowY:'auto' }}>
-          <div className="nav-section">Menu</div>
+
+        {/* Nav */}
+        <nav style={{ flex:1, overflowY:'auto', paddingBottom:8 }}>
+          <div className="sidebar-section">Main Menu</div>
           {NAV_ITEMS.map(item => (
             <button key={item.id}
               className={`nav-item${activeTab === item.id ? ' active' : ''}`}
               onClick={() => setActiveTab(item.id)}>
-              {item.icon}{item.label}
+              {item.icon}
+              {item.label}
+              {activeTab === item.id && <span className="nav-dot" />}
             </button>
           ))}
         </nav>
+
+        {/* User */}
         <div className="sidebar-footer">
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <div className="user-avatar">{(user?.name || user?.email || 'U')[0].toUpperCase()}</div>
@@ -93,7 +161,7 @@ function Sidebar({ user, onLogout }) {
               <div className="user-name">{user?.name || 'Investor'}</div>
               <div className="user-email">{user?.email}</div>
             </div>
-            <button className="logout-btn" onClick={onLogout} title="Sign out">×</button>
+            <button className="logout-btn" onClick={onLogout} title="Sign out">✕</button>
           </div>
         </div>
       </div>
@@ -101,24 +169,67 @@ function Sidebar({ user, onLogout }) {
   );
 }
 
-function TopBar() {
+function TopBar({ user }) {
   const { activeTab } = useUIStore();
-  const titles = { portfolio: 'Portfolio', add: 'Add Holding', upload: 'Upload CSV', analytics: 'Analytics' };
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const name = user?.name || user?.email?.split('@')[0] || 'Investor';
   const today = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   const { mutate: refreshNav, isPending: isRefreshing } = useRefreshNav();
+  const titles = { portfolio: 'Portfolio Overview', add: 'Add Holding', upload: 'Upload CSV', analytics: 'Analytics' };
+
   return (
     <>
       <style>{`
-        .topbar{height:54px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--bg-card);flex-shrink:0}
-        .topbar-title{font-size:14px;font-weight:600;color:var(--text-primary)}
-        .topbar-date{font-size:11px;color:var(--text-muted);font-family:var(--font-mono)}
-        .refresh-nav-btn{display:flex;align-items:center;gap:5px;font-size:12px;padding:5px 12px;border-radius:var(--radius-md);border:1.5px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-family:var(--font-sans);transition:all .15s}
-        .refresh-nav-btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:var(--accent-light)}
-        .refresh-nav-btn:disabled{opacity:.55;cursor:not-allowed}
+        .topbar {
+          height: 64px; flex-shrink: 0;
+          background: var(--bg-card);
+          border-bottom: 1px solid var(--border-light);
+          display: flex; align-items: center;
+          justify-content: space-between;
+          padding: 0 28px;
+          box-shadow: 0 1px 0 var(--border-light);
+        }
+        .topbar-left { display:flex; flex-direction:column; gap:1px; }
+        .topbar-greeting { font-size: 18px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1.2; }
+        .topbar-subtitle { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+        .topbar-right { display:flex; align-items:center; gap:12px; }
+        .topbar-avatar {
+          width: 36px; height: 36px; border-radius: 50%;
+          background: linear-gradient(135deg,#7c6fcd,#f5a623);
+          color: #fff; font-size: 13px; font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 2px 8px rgba(124,111,205,0.4);
+        }
+        .refresh-nav-btn {
+          display: flex; align-items: center; gap: 6px;
+          font-size: 12px; font-weight: 500;
+          padding: 7px 14px; border-radius: var(--radius-pill);
+          border: 1.5px solid var(--border);
+          background: var(--bg-card); color: var(--text-secondary);
+          cursor: pointer; font-family: var(--font-sans);
+          transition: all .15s;
+        }
+        .refresh-nav-btn:hover:not(:disabled) {
+          border-color: var(--accent); color: var(--accent);
+          background: var(--accent-light);
+          box-shadow: 0 2px 8px var(--accent-ring);
+        }
+        .refresh-nav-btn:disabled { opacity:.55; cursor:not-allowed; }
+        .topbar-page-chip {
+          font-size: 11px; font-weight: 600; letter-spacing: .04em;
+          text-transform: uppercase; color: var(--text-muted);
+          background: var(--bg-hover); padding: 4px 10px;
+          border-radius: var(--radius-pill);
+          border: 1px solid var(--border-light);
+        }
       `}</style>
       <div className="topbar">
-        <span className="topbar-title">{titles[activeTab] || 'Dashboard'}</span>
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+        <div className="topbar-left">
+          <div className="topbar-greeting">{greeting}, {name}</div>
+          <div className="topbar-subtitle">{today} · {titles[activeTab] || 'Dashboard'}</div>
+        </div>
+        <div className="topbar-right">
           <button
             className="refresh-nav-btn"
             onClick={() => refreshNav()}
@@ -132,7 +243,7 @@ function TopBar() {
             </svg>
             {isRefreshing ? 'Refreshing…' : 'Refresh NAV'}
           </button>
-          <span className="topbar-date">{today}</span>
+          <div className="topbar-avatar">{name[0].toUpperCase()}</div>
         </div>
       </div>
     </>
@@ -178,12 +289,12 @@ function Shell() {
       <style>{`
         .app-root{display:flex;min-height:100vh;background:var(--bg-app);font-family:var(--font-sans)}
         .main-col{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-app)}
-        .page-wrap{flex:1;padding:28px;max-width:980px;width:100%;margin:0 auto;box-sizing:border-box}
+        .page-wrap{flex:1;padding:30px 32px;max-width:1060px;width:100%;margin:0 auto;box-sizing:border-box}
       `}</style>
       <div className="app-root">
         <Sidebar user={user} onLogout={logout} />
         <div className="main-col">
-          <TopBar />
+          <TopBar user={user} />
           <div className="page-wrap">
             <ErrorBoundary>
               {activeTab === 'portfolio'  && <PortfolioPage />}

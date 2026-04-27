@@ -1,63 +1,75 @@
 /* ── Google Fonts ─────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── CSS Variables — Light Mode ───────────────────────────────────────────── */
+/* ── CSS Variables ────────────────────────────────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg-app:        #eef2f7;
+  /* ── Sidebar (always dark purple — not affected by dark mode) ── */
+  --sidebar-bg:           #252547;
+  --sidebar-bg-hover:     rgba(255,255,255,0.06);
+  --sidebar-text:         #a4a6b3;
+  --sidebar-text-active:  #ffffff;
+  --sidebar-active-bg:    rgba(255,255,255,0.08);
+  --sidebar-active-dot:   #f5a623;   /* orange accent pill */
+  --sidebar-brand-bg:     #3d3d7a;
+  --sidebar-border:       rgba(255,255,255,0.07);
+  --sidebar-section:      rgba(255,255,255,0.35);
+
+  /* ── App backgrounds ── */
+  --bg-app:        #f0f1f7;
   --bg-card:       #ffffff;
   --bg-input:      #ffffff;
-  --bg-hover:      #f1f5f9;
-  --bg-muted:      #f8fafc;
-  --bg-active:     #eff6ff;
+  --bg-hover:      #f5f6fa;
+  --bg-muted:      #f8f9fc;
+  --bg-active:     #eef0fb;
 
-  /* Borders */
-  --border:        #cbd5e1;
-  --border-light:  #e2e8f0;
-  --border-focus:  #3b82f6;
+  /* ── Borders ── */
+  --border:        #dfe0eb;
+  --border-light:  #eaeaea;
+  --border-focus:  #7c72e5;
 
-  /* Text */
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-muted:     #94a3b8;
+  /* ── Text ── */
+  --text-primary:   #252547;
+  --text-secondary: #4b5563;
+  --text-muted:     #9fa2b4;
   --text-inverse:   #ffffff;
 
-  /* Accent */
-  --accent:        #2563eb;
-  --accent-hover:  #1d4ed8;
-  --accent-light:  #eff6ff;
-  --accent-ring:   rgba(37, 99, 235, 0.15);
+  /* ── Accent (purple — matches sidebar brand) ── */
+  --accent:        #7c6fcd;
+  --accent-hover:  #6a5dc2;
+  --accent-light:  #eeedf8;
+  --accent-ring:   rgba(124, 111, 205, 0.18);
 
-  /* Semantic */
-  --color-gain:    #16a34a;
-  --color-loss:    #dc2626;
-  --color-warn:    #d97706;
-  --color-gain-bg: #f0fdf4;
-  --color-loss-bg: #fef2f2;
+  /* ── Semantic ── */
+  --color-gain:    #29cc97;
+  --color-loss:    #f12b2c;
+  --color-warn:    #f5a623;
+  --color-gain-bg: #e8faf4;
+  --color-loss-bg: #feecec;
 
-  /* Badge colors */
-  --badge-india-bg:   #fef3c7;
-  --badge-india-text: #92400e;
-  --badge-global-bg:  #dbeafe;
-  --badge-global-text:#1e40af;
+  /* ── Badge colors ── */
+  --badge-india-bg:   #fff4de;
+  --badge-india-text: #b45309;
+  --badge-global-bg:  #e8eeff;
+  --badge-global-text:#3730a3;
 
-  /* Shadows */
-  --shadow-sm:  0 1px 2px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.06);
-  --shadow-md:  0 4px 6px rgba(15,23,42,0.05), 0 2px 4px rgba(15,23,42,0.06);
-  --shadow-card:0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04);
+  /* ── Shadows ── */
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.08);
+  --shadow-card: 0 2px 10px rgba(37,37,71,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-lg:   0 8px 32px rgba(37,37,71,0.12);
 
-  /* Radii */
-  --radius-sm:  6px;
-  --radius-md:  8px;
-  --radius-lg:  12px;
-  --radius-xl:  16px;
-  --radius-pill:999px;
+  /* ── Radii ── */
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-pill: 999px;
 
-  /* Typography */
+  /* ── Typography ── */
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Mono', monospace;
 
-  /* Legacy aliases used by existing components */
+  /* ── Legacy aliases ── */
   --color-background-primary:   var(--bg-card);
   --color-background-secondary: var(--bg-hover);
   --color-text-primary:         var(--text-primary);
@@ -69,43 +81,44 @@
   --border-radius-lg:           var(--radius-lg);
 }
 
-/* ── Dark Mode Variables ──────────────────────────────────────────────────── */
+/* ── Dark Mode ────────────────────────────────────────────────────────────── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-app:        #0d1117;
-    --bg-card:       #161b22;
-    --bg-input:      #0d1117;
-    --bg-hover:      #1c2128;
-    --bg-muted:      #161b22;
-    --bg-active:     #1c2a3a;
+    --bg-app:        #12122a;
+    --bg-card:       #1c1c3a;
+    --bg-input:      #12122a;
+    --bg-hover:      #22224a;
+    --bg-muted:      #1c1c3a;
+    --bg-active:     #252555;
 
-    --border:        #30363d;
-    --border-light:  #21262d;
-    --border-focus:  #58a6ff;
+    --border:        #2e2e5e;
+    --border-light:  #282858;
+    --border-focus:  #9d8fef;
 
-    --text-primary:   #e6edf3;
-    --text-secondary: #8b949e;
-    --text-muted:     #484f58;
-    --text-inverse:   #0d1117;
+    --text-primary:   #e8e8f0;
+    --text-secondary: #9fa2b4;
+    --text-muted:     #5a5a88;
+    --text-inverse:   #12122a;
 
-    --accent:        #58a6ff;
-    --accent-hover:  #79b8ff;
-    --accent-light:  #1c2a3a;
-    --accent-ring:   rgba(88, 166, 255, 0.15);
+    --accent:        #9d8fef;
+    --accent-hover:  #b3a7f5;
+    --accent-light:  #252555;
+    --accent-ring:   rgba(157, 143, 239, 0.18);
 
-    --color-gain:    #3fb950;
-    --color-loss:    #f85149;
-    --color-gain-bg: #0f2a1a;
-    --color-loss-bg: #2a0f0f;
+    --color-gain:    #29cc97;
+    --color-loss:    #f12b2c;
+    --color-gain-bg: #0c2a1e;
+    --color-loss-bg: #2a0c0c;
 
-    --badge-india-bg:   #2d1f00;
-    --badge-india-text: #e6a817;
-    --badge-global-bg:  #0d1f38;
-    --badge-global-text:#79b8ff;
+    --badge-india-bg:   #2d2000;
+    --badge-india-text: #f5a623;
+    --badge-global-bg:  #12124a;
+    --badge-global-text:#9d8fef;
 
-    --shadow-sm:  0 1px 2px rgba(0,0,0,0.3);
-    --shadow-md:  0 4px 8px rgba(0,0,0,0.4);
-    --shadow-card:0 1px 3px rgba(0,0,0,0.4);
+    --shadow-sm:   0 1px 3px rgba(0,0,0,0.4);
+    --shadow-md:   0 4px 16px rgba(0,0,0,0.5);
+    --shadow-card: 0 2px 10px rgba(0,0,0,0.4);
+    --shadow-lg:   0 8px 32px rgba(0,0,0,0.5);
   }
 }
 
@@ -199,7 +212,7 @@ body {
 .btn-primary:not(:disabled):hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+  box-shadow: 0 2px 8px rgba(124,111,205,0.35);
 }
 
 .btn-secondary {

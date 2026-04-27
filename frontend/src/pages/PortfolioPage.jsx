@@ -5,38 +5,49 @@ import { CurrencySelector } from '../components/CurrencySelector.jsx';
 import { SkeletonRow } from '../components/LoadingSpinner.jsx';
 import { fmtCurrency, fmtPct } from '../lib/format.js';
 
-function StatCard({ label, value, sub, subPositive, accent }) {
+function StatCard({ label, value, sub, subPositive, accent, icon }) {
   return (
     <>
       <style>{`
         .stat-card {
           background: var(--bg-card);
           border: 1px solid var(--border-light);
-          border-radius: var(--radius-lg);
-          padding: 20px 22px;
-          position: relative;
-          overflow: hidden;
+          border-radius: var(--radius-xl);
+          padding: 22px 24px 18px;
+          position: relative; overflow: hidden;
           box-shadow: var(--shadow-card);
-          transition: box-shadow 0.15s;
+          transition: box-shadow 0.18s, transform 0.18s;
         }
-        .stat-card:hover { box-shadow: var(--shadow-md); }
-        .stat-accent-bar { position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-        .stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; font-family: var(--font-mono); }
-        .stat-value { font-size: 24px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1; }
-        .stat-sub { font-size: 12px; margin-top: 8px; font-weight: 500; }
+        .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+        .stat-icon-wrap {
+          width: 42px; height: 42px; border-radius: var(--radius-lg);
+          display: flex; align-items: center; justify-content: center;
+          margin-bottom: 14px; flex-shrink: 0;
+        }
+        .stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .stat-value { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.03em; line-height: 1.1; }
+        .stat-sub { font-size: 12px; margin-top: 8px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
+        .stat-divider { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: var(--radius-xl) 0 0 var(--radius-xl); }
       `}</style>
       <div className="stat-card">
-        <div className="stat-accent-bar" style={{ background: accent || 'var(--accent)' }} />
+        <div className="stat-divider" style={{ background: accent || 'var(--accent)' }} />
+        <div className="stat-icon-wrap" style={{ background: (accent || 'var(--accent)') + '18' }}>
+          {icon || (
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke={accent || 'var(--accent)'} strokeWidth="1.8" strokeLinecap="round">
+              <path d="M2 14l4-4 3 3 5-6 4 3"/>
+            </svg>
+          )}
+        </div>
         <div className="stat-label">{label}</div>
         <div className="stat-value">{value ?? '—'}</div>
         {sub && (
           <div className="stat-sub" style={{
-            color: subPositive === true
-              ? 'var(--color-gain)'
-              : subPositive === false
-              ? 'var(--color-loss)'
-              : 'var(--text-muted)',
+            color: subPositive === true ? 'var(--color-gain)'
+                 : subPositive === false ? 'var(--color-loss)'
+                 : 'var(--text-muted)',
           }}>
+            {subPositive === true && <span>▲</span>}
+            {subPositive === false && <span>▼</span>}
             {sub}
           </div>
         )}
