@@ -84,19 +84,29 @@ public class FundMetaRepository : IFundMetaRepository
         IEnumerable<(string FundId, decimal Nav, DateTime NavDate)> updates,
         CancellationToken ct = default)
     {
-        var ids = updates.Select(u => u.FundId).ToList();
-        var funds = await _db.FundMetas.Where(f => ids.Contains(f.Id)).ToListAsync(ct);
-        var updateMap = updates.ToDictionary(u => u.FundId);
+        var updateList = updates.ToList();
+        if (updateList.Count == 0) return;
 
-        foreach (var fund in funds)
+        // Process in chunks — keeps IN-clause within reasonable bounds and
+        // spreads the change-tracker load across smaller SaveChanges calls.
+        const int chunkSize = 500;
+        for (int i = 0; i < updateList.Count; i += chunkSize)
         {
-            if (!updateMap.TryGetValue(fund.Id, out var upd)) continue;
-            fund.LatestNav = upd.Nav;
-            fund.NavDate = upd.NavDate;
-            fund.UpdatedAt = DateTime.UtcNow;
-        }
+            var chunk     = updateList.Skip(i).Take(chunkSize).ToList();
+            var ids       = chunk.Select(u => u.FundId).ToList();
+            var funds     = await _db.FundMetas.Where(f => ids.Contains(f.Id)).ToListAsync(ct);
+            var updateMap = chunk.ToDictionary(u => u.FundId);
 
-        await _db.SaveChangesAsync(ct);
+            foreach (var fund in funds)
+            {
+                if (!updateMap.TryGetValue(fund.Id, out var upd)) continue;
+                fund.LatestNav = upd.Nav;
+                fund.NavDate   = upd.NavDate;
+                fund.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
     }
 
     /// <summary>

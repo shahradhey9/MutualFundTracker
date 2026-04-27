@@ -28,20 +28,18 @@ public class FundService : IFundService
 
     public async Task<List<FundSearchResultDto>> SearchAsync(string query, Region region, CancellationToken ct = default)
     {
-        if (region == Region.INDIA)
-        {
-            // Search the AMFI in-memory cache directly — it always contains ALL ~7000 Growth
-            // plan funds with today's published NAVs, regardless of DB seed state.
-            // The DB seed may be incomplete; the AMFI cache is always authoritative for India.
-            _logger.LogDebug("India search '{Query}' — using AMFI in-memory cache", query);
-            return await _amfi.SearchAsync(query, ct);
-        }
-
-        // Global: DB search + overlay live prices from the in-memory Yahoo NAV cache.
+        // Both India and Global search against fund_meta (the master NAV table).
+        // fund_meta is kept up-to-date by the 30-minute background refresh loop, so
+        // search results always reflect NAVs that are at most 30 minutes old.
         var dbResults = await _funds.SearchAsync(query, region, ct: ct);
-        _logger.LogDebug("Global search '{Query}' → {Count} results from fund_meta", query, dbResults.Count);
+        _logger.LogDebug("{Region} search '{Query}' → {Count} results from fund_meta", region, query, dbResults.Count);
 
-        if (dbResults.Count > 0)
+        if (dbResults.Count == 0)
+            return [];
+
+        // For Global funds, overlay the in-memory Yahoo snapshot — it may be fractionally
+        // fresher than the DB row (written seconds after the in-memory update).
+        if (region == Region.GLOBAL)
         {
             var navCache = _yahoo.GetGlobalNavSnapshot();
             return dbResults.Select(f =>
@@ -52,6 +50,8 @@ public class FundService : IFundService
             }).ToList();
         }
 
+        // For India, the DB NAV is authoritative — AMFI publishes once per day and the
+        // background refresh writes the value to fund_meta within 30 minutes of publication.
         return dbResults.Select(ToSearchResultDto).ToList();
     }
 

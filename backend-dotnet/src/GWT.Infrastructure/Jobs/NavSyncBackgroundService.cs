@@ -50,8 +50,9 @@ public class NavSyncBackgroundService : BackgroundService
         // Start one independent loop per timezone — all run concurrently
         var loops = KnownTimezones.Select(tz => RunTimezoneLoopAsync(tz, stoppingToken));
 
-        // Also run a 4-hour global NAV cache refresh loop (independent of midnight syncs)
-        return Task.WhenAll([..loops, RunGlobalNavCacheRefreshLoopAsync(stoppingToken)]);
+        // Also run a 30-min cache-refresh loop that keeps both India and Global NAVs
+        // fresh in memory AND persists the latest values to fund_meta.
+        return Task.WhenAll([..loops, RunNavCacheRefreshLoopAsync(stoppingToken)]);
     }
 
     // ── Per-timezone sync loop ───────────────────────────────────────────────────
@@ -96,51 +97,92 @@ public class NavSyncBackgroundService : BackgroundService
             await svc.SyncGlobalByTimezoneAsync(config.IanaId, ct);
     }
 
-    // ── Global NAV cache refresh loop (every 4 hours) ───────────────────────────
+    // ── Combined NAV cache refresh loop (every 30 min) ──────────────────────────
 
-    private static readonly TimeSpan GlobalNavCacheInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan NavCacheRefreshInterval = TimeSpan.FromMinutes(30);
 
     /// <summary>
-    /// Runs independently of the midnight loops. Immediately warms the global NAV cache
-    /// at startup, then refreshes every 4 hours — same cadence as AMFI's process cache TTL.
+    /// Refreshes both India (AMFI) and Global (Yahoo Finance) NAV caches every 30 minutes.
+    /// Each refresh updates the in-memory cache AND persists the latest NAVs to fund_meta,
+    /// so fund_meta is the always-current master table for all fund prices.
     /// </summary>
-    private async Task RunGlobalNavCacheRefreshLoopAsync(CancellationToken ct)
+    private async Task RunNavCacheRefreshLoopAsync(CancellationToken ct)
     {
-        // First run: wait for the startup warm-up (crumb + AMFI) to finish, then immediately
-        // populate the global NAV cache so search shows live prices as soon as possible.
+        // Wait for startup warm-up to finish before the first refresh.
         await Task.Delay(TimeSpan.FromSeconds(10), ct);
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await RefreshGlobalNavCacheAsync(ct);
+                // Run India and Global refreshes in parallel.
+                await Task.WhenAll(
+                    RefreshIndiaNavCacheAsync(ct),
+                    RefreshGlobalNavCacheAsync(ct));
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Global NAV cache refresh failed — retrying in 30 minutes.");
-                await Task.Delay(TimeSpan.FromMinutes(30), ct);
+                _logger.LogError(ex, "NAV cache refresh failed — retrying in 30 minutes.");
+                await Task.Delay(NavCacheRefreshInterval, ct);
                 continue;
             }
 
-            await Task.Delay(GlobalNavCacheInterval, ct);
+            await Task.Delay(NavCacheRefreshInterval, ct);
         }
     }
 
+    /// <summary>
+    /// Fetches the latest AMFI NAVAll.txt, updates the in-memory AMFI cache,
+    /// and persists all ~7 000 India fund NAVs to fund_meta.
+    /// </summary>
+    private async Task RefreshIndiaNavCacheAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var amfi        = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+        var fundRepo    = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+
+        var allNavs = await amfi.FetchAllNavsAsync(ct);
+        if (allNavs.Count == 0) return;
+
+        _logger.LogInformation("India NAV refresh: persisting {Count} NAVs to fund_meta.", allNavs.Count);
+
+        var updates = allNavs.Select(f => ($"IN-{f.SchemeCode}", f.Nav, f.NavDate));
+        await fundRepo.UpdateNavBatchAsync(updates, ct);
+    }
+
+    /// <summary>
+    /// Fetches live Yahoo Finance quotes for all Global tickers in fund_meta,
+    /// updates the in-memory Yahoo NAV cache, and persists the prices to fund_meta.
+    /// </summary>
     private async Task RefreshGlobalNavCacheAsync(CancellationToken ct)
     {
-        using var scope   = _scopeFactory.CreateScope();
-        var funds         = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
-        var allGlobal     = await funds.GetAllByRegionAsync(Region.GLOBAL, ct);
-        var tickers       = allGlobal.Select(f => f.Ticker).Distinct().ToList();
+        using var scope = _scopeFactory.CreateScope();
+        var fundRepo    = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+
+        var allGlobal = await fundRepo.GetAllByRegionAsync(Region.GLOBAL, ct);
+        var tickers   = allGlobal.Select(f => f.Ticker).Distinct().ToList();
 
         if (tickers.Count == 0)
         {
-            _logger.LogInformation("Global NAV cache refresh skipped — no Global funds in fund_meta yet.");
+            _logger.LogInformation("Global NAV refresh skipped — no Global funds in fund_meta yet.");
             return;
         }
 
-        await _yahoo.FetchAndCacheGlobalNavsAsync(tickers, ct);
+        var quotes = await _yahoo.FetchAndCacheGlobalNavsAsync(tickers, ct);
+
+        if (quotes.Count == 0) return;
+
+        // Map ticker → fund_meta id, then persist NAVs.
+        var tickerToId = allGlobal
+            .Where(f => !string.IsNullOrEmpty(f.Ticker))
+            .ToDictionary(f => f.Ticker, f => f.Id, StringComparer.OrdinalIgnoreCase);
+
+        var updates = quotes
+            .Where(kv => tickerToId.ContainsKey(kv.Key))
+            .Select(kv => (tickerToId[kv.Key], kv.Value.Price, kv.Value.Timestamp));
+
+        await fundRepo.UpdateNavBatchAsync(updates, ct);
+        _logger.LogInformation("Global NAV refresh: {Count} NAVs persisted to fund_meta.", quotes.Count);
     }
 
     // ── Warm-up ──────────────────────────────────────────────────────────────────

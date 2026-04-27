@@ -75,14 +75,36 @@ public class FundsController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                           ?? User.FindFirst("sub")?.Value;
 
-        // Run India (AMFI) and Global (Yahoo) refreshes in parallel.
-        var amfiTask = _amfi.ForceRefreshAsync(ct);
+        // India: force-refresh AMFI in-memory cache and persist all NAVs to fund_meta.
+        var amfiTask = Task.Run(async () =>
+        {
+            var allNavs = await _amfi.ForceRefreshAsync(ct);
+            if (allNavs.Count > 0)
+            {
+                var updates = allNavs.Select(f => ($"IN-{f.SchemeCode}", f.Nav, f.NavDate));
+                await _fundMeta.UpdateNavBatchAsync(updates, ct);
+            }
+        }, ct);
 
+        // Global: force-refresh Yahoo in-memory cache and persist NAVs to fund_meta.
         var yahooTask = Task.Run(async () =>
         {
             var globalFunds = await _fundMeta.GetAllByRegionAsync(Region.GLOBAL, ct);
-            var tickers = globalFunds.Select(f => f.Ticker).Distinct();
-            await _yahoo.ForceRefreshGlobalNavsAsync(tickers, ct);
+            var tickers     = globalFunds.Select(f => f.Ticker).Distinct().ToList();
+            if (tickers.Count > 0)
+            {
+                var quotes = await _yahoo.ForceRefreshGlobalNavsAsync(tickers, ct);
+                if (quotes.Count > 0)
+                {
+                    var tickerToId = globalFunds
+                        .Where(f => !string.IsNullOrEmpty(f.Ticker))
+                        .ToDictionary(f => f.Ticker, f => f.Id, StringComparer.OrdinalIgnoreCase);
+                    var updates = quotes
+                        .Where(kv => tickerToId.ContainsKey(kv.Key))
+                        .Select(kv => (tickerToId[kv.Key], kv.Value.Price, kv.Value.Timestamp));
+                    await _fundMeta.UpdateNavBatchAsync(updates, ct);
+                }
+            }
         }, ct);
 
         await Task.WhenAll(amfiTask, yahooTask);
