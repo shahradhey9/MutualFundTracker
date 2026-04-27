@@ -26,7 +26,7 @@ public class AmfiService : IAmfiService
     private const string NavAllUrl = "https://www.amfiindia.com/spages/NAVAll.txt";
     private const string CacheKeyAll = "amfi:navall";
     private const string CacheKeySearch = "amfi:search:";
-    private static readonly TimeSpan NavCacheTtl = TimeSpan.FromHours(4);
+    private static readonly TimeSpan NavCacheTtl = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
 
     // Process-level static cache — survives across transient DI instances.

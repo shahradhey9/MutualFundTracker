@@ -39,9 +39,9 @@ public class YahooFinanceService : IYahooFinanceService
     private static volatile Dictionary<string, YahooQuoteDto>? _globalNavCache;
     private static DateTime _globalNavCacheExpiry = DateTime.MinValue;
     private static readonly SemaphoreSlim _globalNavLock = new(1, 1);
-    private static readonly TimeSpan GlobalNavCacheTtl = TimeSpan.FromHours(4);
+    private static readonly TimeSpan GlobalNavCacheTtl = TimeSpan.FromMinutes(30);
 
-    private static readonly TimeSpan QuoteCacheTtl  = TimeSpan.FromHours(4);
+    private static readonly TimeSpan QuoteCacheTtl  = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 

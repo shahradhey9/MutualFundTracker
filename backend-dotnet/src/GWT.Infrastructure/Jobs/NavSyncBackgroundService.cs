@@ -98,7 +98,7 @@ public class NavSyncBackgroundService : BackgroundService
 
     // ── Global NAV cache refresh loop (every 4 hours) ───────────────────────────
 
-    private static readonly TimeSpan GlobalNavCacheInterval = TimeSpan.FromHours(4);
+    private static readonly TimeSpan GlobalNavCacheInterval = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Runs independently of the midnight loops. Immediately warms the global NAV cache
