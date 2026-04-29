@@ -191,7 +191,7 @@ public class NavSyncBackgroundService : BackgroundService
             Isin       = f.Isin,
             Timezone   = "Asia/Kolkata",
             LatestNav  = f.Nav,
-            NavDate    = f.NavDate,
+            NavDate    = DateTime.SpecifyKind(f.NavDate, DateTimeKind.Utc),
             UpdatedAt  = DateTime.UtcNow,
         });
 
@@ -297,7 +297,7 @@ public class NavSyncBackgroundService : BackgroundService
                     Isin       = f.Isin,
                     Timezone   = "Asia/Kolkata",
                     LatestNav  = f.Nav,
-                    NavDate    = f.NavDate,
+                    NavDate    = DateTime.SpecifyKind(f.NavDate, DateTimeKind.Utc),
                     UpdatedAt  = DateTime.UtcNow,
                 });
 

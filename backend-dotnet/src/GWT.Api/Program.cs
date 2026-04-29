@@ -271,7 +271,7 @@ _ = Task.Run(async () =>
                 Isin       = f.Isin,
                 Timezone   = "Asia/Kolkata",
                 LatestNav  = f.Nav,
-                NavDate    = f.NavDate,
+                NavDate    = DateTime.SpecifyKind(f.NavDate, DateTimeKind.Utc),
                 UpdatedAt  = DateTime.UtcNow,
             });
             await repo.BulkUpsertFundsAsync(entities);

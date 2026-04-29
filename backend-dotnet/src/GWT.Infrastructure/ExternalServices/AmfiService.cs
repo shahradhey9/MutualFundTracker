@@ -197,13 +197,18 @@ public class AmfiService : IAmfiService
                     DateTimeStyles.None, out var navDate))
                 continue;
 
+            // SpecifyKind(Utc) is required because DateTime.TryParseExact with DateTimeStyles.None
+            // produces DateTimeKind.Unspecified, and Npgsql 6+ throws when writing an Unspecified
+            // DateTime to a "timestamp with time zone" column.  All AMFI dates are IST (UTC+5:30)
+            // but we treat them as UTC-date-only values for storage purposes — the time component
+            // is midnight and the date itself is what matters.
             results.Add(new AmfiFundRawDto(
                 SchemeCode: schemeCode,
                 SchemeName: schemeName,
                 Amc: currentAmc,
                 Isin: parts[1].Trim().Length > 0 ? parts[1].Trim() : null,
                 Nav: nav,
-                NavDate: navDate));
+                NavDate: DateTime.SpecifyKind(navDate, DateTimeKind.Utc)));
         }
 
         return results;

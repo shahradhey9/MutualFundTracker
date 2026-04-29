@@ -81,7 +81,7 @@ public class FundsController : ControllerBase
             var allNavs = await _amfi.ForceRefreshAsync(ct);
             if (allNavs.Count > 0)
             {
-                var updates = allNavs.Select(f => ($"IN-{f.SchemeCode}", f.Nav, f.NavDate));
+                var updates = allNavs.Select(f => ($"IN-{f.SchemeCode}", f.Nav, DateTime.SpecifyKind(f.NavDate, DateTimeKind.Utc)));
                 await _fundMeta.UpdateNavBatchAsync(updates, ct);
             }
         }, ct);
