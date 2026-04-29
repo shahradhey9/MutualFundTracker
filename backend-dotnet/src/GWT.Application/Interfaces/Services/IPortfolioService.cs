@@ -11,4 +11,8 @@ public interface IPortfolioService
 
     /// <summary>Evicts the given user's cached portfolio so the next read rebuilds from DB + live NAVs.</summary>
     void InvalidateUserCache(Guid userId);
+
+    /// <summary>Evicts ALL users' cached portfolios. Called after a NAV refresh so every user
+    /// sees updated prices on their next portfolio load.</summary>
+    void InvalidateAllCaches();
 }

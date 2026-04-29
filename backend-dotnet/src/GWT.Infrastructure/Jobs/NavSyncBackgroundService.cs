@@ -161,9 +161,10 @@ public class NavSyncBackgroundService : BackgroundService
     /// </summary>
     private async Task RefreshIndiaNavCacheAsync(CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var amfi     = scope.ServiceProvider.GetRequiredService<IAmfiService>();
-        var fundRepo = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        using var scope     = _scopeFactory.CreateScope();
+        var amfi            = scope.ServiceProvider.GetRequiredService<IAmfiService>();
+        var fundRepo        = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        var portfolioSvc    = scope.ServiceProvider.GetRequiredService<IPortfolioService>();
 
         // Force-refresh bypasses the TTL and re-fetches from AMFI unconditionally.
         // This also clears _searchMemCache so stale search results are evicted.
@@ -196,8 +197,12 @@ public class NavSyncBackgroundService : BackgroundService
 
         await fundRepo.BulkUpsertFundsAsync(entities, ct);
 
+        // Evict all cached portfolios so the next load for every user picks up the fresh NAVs.
+        // Without this, portfolios keep serving pre-computed stale values until their 5-min TTL expires.
+        portfolioSvc.InvalidateAllCaches();
+
         _logger.LogInformation(
-            "India NAV refresh complete: {Count} funds updated in memory and fund_meta.", allNavs.Count);
+            "India NAV refresh complete: {Count} funds updated in memory, fund_meta, and portfolio cache cleared.", allNavs.Count);
     }
 
     /// <summary>
@@ -206,8 +211,9 @@ public class NavSyncBackgroundService : BackgroundService
     /// </summary>
     private async Task RefreshGlobalNavCacheAsync(CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var fundRepo    = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        using var scope  = _scopeFactory.CreateScope();
+        var fundRepo     = scope.ServiceProvider.GetRequiredService<IFundMetaRepository>();
+        var portfolioSvc = scope.ServiceProvider.GetRequiredService<IPortfolioService>();
 
         var allGlobal = await fundRepo.GetAllByRegionAsync(Region.GLOBAL, ct);
         var tickers   = allGlobal.Select(f => f.Ticker).Distinct().ToList();
@@ -232,7 +238,12 @@ public class NavSyncBackgroundService : BackgroundService
             .Select(kv => (tickerToId[kv.Key], kv.Value.Price, kv.Value.Timestamp));
 
         await fundRepo.UpdateNavBatchAsync(updates, ct);
-        _logger.LogInformation("Global NAV refresh: {Count} NAVs persisted to fund_meta.", quotes.Count);
+
+        // Evict all cached portfolios so every user sees the updated Global prices immediately.
+        portfolioSvc.InvalidateAllCaches();
+
+        _logger.LogInformation(
+            "Global NAV refresh complete: {Count} NAVs persisted to fund_meta and portfolio cache cleared.", quotes.Count);
     }
 
     // ── Warm-up ──────────────────────────────────────────────────────────────────

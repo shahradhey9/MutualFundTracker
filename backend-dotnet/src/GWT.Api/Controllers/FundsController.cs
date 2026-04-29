@@ -109,10 +109,9 @@ public class FundsController : ControllerBase
 
         await Task.WhenAll(amfiTask, yahooTask);
 
-        // Evict this user's cached portfolio response so the next GET /portfolio
-        // rebuilds from the freshly populated NAV caches.
-        if (Guid.TryParse(userIdClaim, out var userId))
-            _portfolio.InvalidateUserCache(userId);
+        // Evict ALL cached portfolio responses so every user sees updated NAVs on
+        // their next portfolio load — not just the user who clicked Refresh.
+        _portfolio.InvalidateAllCaches();
 
         return Ok(new { success = true, refreshedAt = DateTime.UtcNow });
     }

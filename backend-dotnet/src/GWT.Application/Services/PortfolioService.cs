@@ -161,6 +161,8 @@ public class PortfolioService : IPortfolioService
 
     public void InvalidateUserCache(Guid userId) => _memCache.TryRemove(userId, out _);
 
+    public void InvalidateAllCaches() => _memCache.Clear();
+
     private static HoldingDto ToDto(Holding h) =>
         new(h.Id, h.FundId, h.Units, h.AvgCost, h.PurchaseAt, h.CreatedAt, h.UpdatedAt);
 }
