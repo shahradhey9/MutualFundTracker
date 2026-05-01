@@ -59,8 +59,13 @@ function findColumn(headers, aliases) {
   return -1;
 }
 
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function parseDate(raw) {
-  if (!raw) return new Date().toISOString().split('T')[0];
+  if (!raw) return localToday();
   // Try common formats: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, DD-MM-YYYY
   const cleaned = raw.trim();
 
@@ -82,11 +87,13 @@ function parseDate(raw) {
     return `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
   }
 
-  // Try native Date parse as last resort
+  // Try native Date parse as last resort — use local date parts to avoid UTC rollover
   const parsed = new Date(cleaned);
-  if (!isNaN(parsed)) return parsed.toISOString().split('T')[0];
+  if (!isNaN(parsed)) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+  }
 
-  return new Date().toISOString().split('T')[0];
+  return localToday();
 }
 
 function guessRegion(name) {

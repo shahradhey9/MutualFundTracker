@@ -19,14 +19,18 @@ export function AddHoldingForm() {
 
   const [units, setUnits] = useState('');
   const [avgCost, setAvgCost] = useState('');
-  const [purchaseAt, setPurchaseAt] = useState(new Date().toISOString().split('T')[0]);
+  const [purchaseAt, setPurchaseAt] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     if (editingHolding) {
       setUnits(String(editingHolding.units));
       setAvgCost(editingHolding.avgCost ? String(editingHolding.avgCost) : '');
-      setPurchaseAt(editingHolding.purchaseAt?.split('T')[0] || new Date().toISOString().split('T')[0]);
+      const fallback = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+      setPurchaseAt(editingHolding.purchaseAt?.split('T')[0] || fallback);
     }
   }, [editingHolding]);
 
