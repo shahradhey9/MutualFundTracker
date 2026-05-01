@@ -12,20 +12,49 @@ const REGIONS = [
 function getExchangeLabel(ticker) {
   if (!ticker) return 'Global';
   const t = ticker.toUpperCase();
-  if (t.endsWith('.L'))  return 'LSE';
-  if (t.endsWith('.PA')) return 'Euronext Paris';
-  if (t.endsWith('.AS')) return 'Euronext Amsterdam';
-  if (t.endsWith('.DE')) return 'XETRA';
-  if (t.endsWith('.MI')) return 'Borsa Italiana';
-  if (t.endsWith('.BR')) return 'Euronext Brussels';
-  if (t.endsWith('.SW')) return 'SIX Swiss';
-  if (t.endsWith('.TO') || t.endsWith('.V')) return 'TSX';
-  if (t.endsWith('.AX')) return 'ASX';
-  if (t.endsWith('.T'))  return 'TSE';
-  if (t.endsWith('.SI')) return 'SGX';
-  if (t.endsWith('.HK')) return 'HKEX';
-  if (t.endsWith('.BO')) return 'BSE';
-  if (t.endsWith('.NS')) return 'NSE';
+  // Europe
+  if (t.endsWith('.L') || t.endsWith('.IL')) return 'LSE';
+  if (t.endsWith('.PA'))  return 'Euronext Paris';
+  if (t.endsWith('.AS'))  return 'Euronext Amsterdam';
+  if (t.endsWith('.DE'))  return 'XETRA';
+  if (t.endsWith('.MI'))  return 'Borsa Italiana';
+  if (t.endsWith('.BR'))  return 'Euronext Brussels';
+  if (t.endsWith('.MC'))  return 'BME Madrid';
+  if (t.endsWith('.SW'))  return 'SIX Swiss';
+  if (t.endsWith('.LS'))  return 'Euronext Lisbon';
+  if (t.endsWith('.OL'))  return 'Oslo Børs';
+  if (t.endsWith('.ST'))  return 'Nasdaq Stockholm';
+  if (t.endsWith('.HE'))  return 'Nasdaq Helsinki';
+  if (t.endsWith('.CO'))  return 'Nasdaq Copenhagen';
+  if (t.endsWith('.IS'))  return 'Borsa Istanbul';
+  if (t.endsWith('.WA'))  return 'WSE Warsaw';
+  // North America
+  if (t.endsWith('.TO') || t.endsWith('.V') || t.endsWith('.CN')) return 'TSX';
+  // Latin America
+  if (t.endsWith('.SN'))  return 'Santiago (Chile)';
+  if (t.endsWith('.MX'))  return 'BMV Mexico';
+  if (t.endsWith('.SA'))  return 'B3 Brazil';
+  if (t.endsWith('.BA'))  return 'BCBA Argentina';
+  // Asia-Pacific
+  if (t.endsWith('.AX'))  return 'ASX';
+  if (t.endsWith('.NZ'))  return 'NZX';
+  if (t.endsWith('.T'))   return 'TSE Tokyo';
+  if (t.endsWith('.SI'))  return 'SGX';
+  if (t.endsWith('.HK'))  return 'HKEX';
+  if (t.endsWith('.SS'))  return 'Shanghai';
+  if (t.endsWith('.SZ'))  return 'Shenzhen';
+  if (t.endsWith('.TW') || t.endsWith('.TWO')) return 'TWSE';
+  if (t.endsWith('.KS') || t.endsWith('.KQ'))  return 'KRX Korea';
+  if (t.endsWith('.BK'))  return 'SET Thailand';
+  if (t.endsWith('.KL'))  return 'Bursa Malaysia';
+  if (t.endsWith('.JK'))  return 'IDX Indonesia';
+  if (t.endsWith('.PS'))  return 'PSE Philippines';
+  // India
+  if (t.endsWith('.BO'))  return 'BSE';
+  if (t.endsWith('.NS'))  return 'NSE';
+  // Middle East / Africa
+  if (t.endsWith('.TA'))  return 'TASE Israel';
+  if (t.endsWith('.JO'))  return 'JSE';
   return 'NYSE/NASDAQ';
 }
 

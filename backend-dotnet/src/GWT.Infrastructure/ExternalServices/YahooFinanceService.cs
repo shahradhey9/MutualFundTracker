@@ -214,13 +214,14 @@ public class YahooFinanceService : IYahooFinanceService
 
             foreach (var q in quotes.EnumerateArray())
             {
-                var type     = q.TryGetProperty("quoteType", out var qt) ? qt.GetString() : null;
-                var ticker   = q.TryGetProperty("symbol",    out var sym) ? sym.GetString() : null;
-                var name     = q.TryGetProperty("shortname", out var sn)  ? sn.GetString()
-                             : q.TryGetProperty("longname",  out var ln)  ? ln.GetString() : ticker;
-                // Prefer exchDisp ("NYSEArca") over the raw code ("PCX")
-                var exchange = q.TryGetProperty("exchDisp",  out var exd) ? exd.GetString()
-                             : q.TryGetProperty("exchange",  out var ex)  ? ex.GetString() : null;
+                var type         = q.TryGetProperty("quoteType", out var qt)  ? qt.GetString()  : null;
+                var ticker       = q.TryGetProperty("symbol",    out var sym) ? sym.GetString()  : null;
+                var name         = q.TryGetProperty("shortname", out var sn)  ? sn.GetString()
+                                 : q.TryGetProperty("longname",  out var ln)  ? ln.GetString()   : ticker;
+                // Prefer exchDisp ("NYSEArca") over the raw code ("PCX") for display
+                var exchangeDisp = q.TryGetProperty("exchDisp",  out var exd) ? exd.GetString()  : null;
+                var exchangeCode = q.TryGetProperty("exchange",  out var exc) ? exc.GetString()  : null;
+                var exchange     = exchangeDisp ?? exchangeCode;
 
                 if (ticker is null) continue;
 
@@ -234,7 +235,10 @@ public class YahooFinanceService : IYahooFinanceService
                     Category:  type,
                     LatestNav: null,
                     NavDate:   null,
-                    Currency:  CurrencyHelper.GetCurrency(ticker)));
+                    // Pass both ticker suffix and raw exchange code so CurrencyHelper can
+                    // resolve the correct currency even when the ticker has no suffix
+                    // (e.g. bare "EWA" for a Santiago-listed fund with exchangeCode="SN").
+                    Currency:  CurrencyHelper.GetCurrency(ticker, exchangeCode: exchangeCode)));
             }
         }
         catch (Exception ex)

@@ -4,9 +4,19 @@ import { useUIStore } from '../lib/store.js';
 
 // Rough fallback rates (units of currency per 1 USD) — used before the live API responds.
 const FALLBACK_FROM_USD = {
-  USD: 1, INR: 84.47, GBP: 0.79, EUR: 0.93,
-  CAD: 1.36, AUD: 1.54, JPY: 155, SGD: 1.35, CHF: 0.90, AED: 3.67,
-  HKD: 7.82, HKD_fallback: 7.82,
+  USD: 1,    INR: 84.47, GBP: 0.79,  EUR: 0.93,
+  CAD: 1.36, AUD: 1.54,  JPY: 155,   SGD: 1.35,
+  CHF: 0.90, AED: 3.67,  HKD: 7.82,
+  // Latin America
+  CLP: 940,  MXN: 17.2,  BRL: 5.8,   ARS: 1050,
+  // Asia-Pacific
+  CNY: 7.25, TWD: 32.5,  KRW: 1380,  THB: 35,
+  MYR: 4.7,  IDR: 16300, PHP: 58,    NZD: 1.65,
+  // Europe (non-EUR)
+  NOK: 10.8, SEK: 10.5,  DKK: 6.9,   PLN: 4.0,
+  CZK: 23.5, TRY: 33,
+  // Middle East / Africa
+  ILS: 3.7,  ZAR: 18.5,
 };
 
 function useFxQuery(from, to, enabled = true) {
