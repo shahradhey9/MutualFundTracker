@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useFundSearch } from '../hooks/usePortfolio.js';
 import { useUIStore } from '../lib/store.js';
-import { useDisplayRates } from '../hooks/useDisplayRates.js';
 import { fmtCurrency } from '../lib/format.js';
 
 const REGIONS = [
@@ -17,7 +16,6 @@ export function FundSearch() {
     clearSearch,
   } = useUIStore();
 
-  const { displayCurrency, convert } = useDisplayRates();
   const inputRef = useRef(null);
 
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -223,7 +221,7 @@ export function FundSearch() {
                       <div className="result-meta">
                         {fund.ticker}
                         {fund.amc && ` · ${fund.amc}`}
-                        {fund.latestNav != null && ` · ${fmtCurrency(convert(fund.latestNav, fund.currency || (searchRegion === 'INDIA' ? 'INR' : 'USD')), displayCurrency)}`}
+                        {fund.latestNav != null && ` · ${fmtCurrency(fund.latestNav, fund.currency || (searchRegion === 'INDIA' ? 'INR' : 'USD'))}`}
                         {fund.category && ` · ${fund.category}`}
                       </div>
                     </div>

@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useUIStore } from '../lib/store.js';
 
-// Rough fallback rates (USD → currency) used before the live API responds.
+// Rough fallback rates (units of currency per 1 USD) — used before the live API responds.
 const FALLBACK_FROM_USD = {
   USD: 1, INR: 84.47, GBP: 0.79, EUR: 0.93,
   CAD: 1.36, AUD: 1.54, JPY: 155, SGD: 1.35, CHF: 0.90, AED: 3.67,
+  HKD: 7.82, HKD_fallback: 7.82,
 };
 
 function useFxQuery(from, to, enabled = true) {
@@ -24,49 +25,58 @@ function useFxQuery(from, to, enabled = true) {
 }
 
 /**
- * Returns FX rates and a `convert(amount, nativeCurrency)` function that
- * converts any holding value to the user's chosen display currency.
+ * Returns FX rates and a `convert(amount, nativeCurrency)` function that converts
+ * any holding value to the user's chosen display currency.
  *
- * Also exposes `inrPerUsd` for the SyncPill (same query, no extra request).
+ * Pre-fetches USD/INR, USD/GBP and USD/EUR unconditionally because these are the
+ * three most common native currencies (India, LSE, Euronext funds).
+ * All other currencies fall back to FALLBACK_FROM_USD.
  */
 export function useDisplayRates() {
   const displayCurrency = useUIStore(s => s.displayCurrency);
 
-  // Always keep USD/INR — needed for legacy toUSD logic and the SyncPill.
+  // Always fetch USD/INR (India holdings + SyncPill), USD/GBP (LSE funds), USD/EUR (Euronext).
   const { data: inrPerUsdRaw } = useFxQuery('USD', 'INR');
-  const inrPerUsd = inrPerUsdRaw ?? FALLBACK_FROM_USD.INR;
+  const { data: usdToGbpRaw }  = useFxQuery('USD', 'GBP');
+  const { data: usdToEurRaw }  = useFxQuery('USD', 'EUR');
 
-  // When displayCurrency is neither USD nor INR, fetch USD → displayCurrency.
-  // We derive INR → displayCurrency via triangulation:
-  //   INR → display = (1 / inrPerUsd) × usdToDisplay
-  // This avoids a second HTTP request.
-  const needsExtraFx = displayCurrency !== 'USD' && displayCurrency !== 'INR';
-  const { data: usdToDisplayRaw } = useFxQuery('USD', displayCurrency, needsExtraFx);
+  // Fetch USD→displayCurrency only when it isn't already covered above.
+  const coreRates = ['USD', 'INR', 'GBP', 'EUR'];
+  const { data: usdToDisplayExtraRaw } = useFxQuery(
+    'USD', displayCurrency,
+    !coreRates.includes(displayCurrency),
+  );
 
-  // Determine effective conversion rates
-  let usdToDisplay, inrToDisplay;
+  // Build a map: currency code → units of that currency per 1 USD (live rate or fallback).
+  const ratesFromUsd = {
+    ...FALLBACK_FROM_USD,
+    INR: inrPerUsdRaw ?? FALLBACK_FROM_USD.INR,
+    GBP: usdToGbpRaw ?? FALLBACK_FROM_USD.GBP,
+    EUR: usdToEurRaw ?? FALLBACK_FROM_USD.EUR,
+  };
 
-  if (displayCurrency === 'USD') {
-    usdToDisplay = 1;
-    inrToDisplay = 1 / inrPerUsd;
-  } else if (displayCurrency === 'INR') {
-    usdToDisplay = inrPerUsd;
-    inrToDisplay = 1;
-  } else {
-    const fallback = FALLBACK_FROM_USD[displayCurrency] ?? 1;
-    usdToDisplay = usdToDisplayRaw ?? fallback;
-    inrToDisplay = usdToDisplay / inrPerUsd;
-  }
+  // Resolve the effective rate for the selected display currency.
+  const usdToDisplay = (() => {
+    if (displayCurrency === 'USD') return 1;
+    if (coreRates.includes(displayCurrency)) return ratesFromUsd[displayCurrency];
+    return usdToDisplayExtraRaw ?? FALLBACK_FROM_USD[displayCurrency] ?? 1;
+  })();
+  ratesFromUsd[displayCurrency] = usdToDisplay;
 
-  /** Convert `amount` from `nativeCurrency` (INR or USD) to `displayCurrency`. */
+  const inrPerUsd = ratesFromUsd.INR;
+
+  /**
+   * Convert `amount` (in `nativeCurrency`) to `displayCurrency`.
+   * Triangulates via USD: nativeCurrency → USD → displayCurrency.
+   */
   const convert = (amount, nativeCurrency) => {
     if (amount == null || isNaN(Number(amount))) return null;
     const n = Number(amount);
     if (nativeCurrency === displayCurrency) return n;
-    if (nativeCurrency === 'USD') return n * usdToDisplay;
-    if (nativeCurrency === 'INR') return n * inrToDisplay;
-    return n; // unknown native currency — pass through
+
+    const nativePerUsd = ratesFromUsd[nativeCurrency] ?? FALLBACK_FROM_USD[nativeCurrency] ?? 1;
+    return (n / nativePerUsd) * usdToDisplay;
   };
 
-  return { displayCurrency, convert, inrPerUsd, usdToDisplay, inrToDisplay };
+  return { displayCurrency, convert, inrPerUsd, usdToDisplay };
 }

@@ -115,8 +115,8 @@ export function PortfolioPage() {
   const indiaHoldings  = holdings.filter(h => h.region === 'INDIA');
   const globalHoldings = holdings.filter(h => h.region === 'GLOBAL');
 
-  const indiaValue  = indiaHoldings.reduce((s, h) => s + (convert(h.currentValue, 'INR') ?? 0), 0);
-  const globalValue = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, 'USD') ?? 0), 0);
+  const indiaValue  = indiaHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
+  const globalValue = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
   const totalValue  = indiaValue + globalValue;
 
   const totalCost    = holdings.reduce((s, h) => s + (convert(h.costBasis, h.currency) ?? 0), 0);

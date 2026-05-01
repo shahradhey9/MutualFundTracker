@@ -6,6 +6,8 @@ using GWT.Domain.Entities;
 using GWT.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
+// CurrencyHelper is in the GWT.Application namespace — no extra using needed
+
 namespace GWT.Application.Services;
 
 public class PortfolioService : IPortfolioService
@@ -52,7 +54,7 @@ public class PortfolioService : IPortfolioService
             else
                 nav = h.Fund.LatestNav;
 
-            var currency = h.Fund.Region == Region.INDIA ? "INR" : "USD";
+            var currency = CurrencyHelper.GetCurrency(h.Fund.Ticker, h.Fund.Timezone);
 
             decimal? currentValue = nav > 0 ? h.Units * nav : null;
             decimal? costBasis    = h.AvgCost.HasValue ? h.Units * h.AvgCost.Value : null;

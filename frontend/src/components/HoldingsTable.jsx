@@ -64,7 +64,7 @@ export function HoldingsTable({ holdings, displayCurrency = 'USD', convert = (v)
                   {h.ticker}{h.amc && ` · ${h.amc}`}
                 </div>
               </td>
-              <td className="td-mono">{fmtCurrency(convert(h.liveNav, h.currency), displayCurrency)}</td>
+              <td className="td-mono">{fmtCurrency(h.liveNav, h.currency)}</td>
               <td className="td-mono">{fmtUnits(h.units)}</td>
               <td className="td-mono">{fmtCurrency(convert(h.currentValue, h.currency), displayCurrency)}</td>
               <td className="td-mono">{h.costBasis ? fmtCurrency(convert(h.costBasis, h.currency), displayCurrency) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>

@@ -5,6 +5,8 @@ using GWT.Domain.Entities;
 using GWT.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
+// CurrencyHelper is in the GWT.Application namespace — no extra using needed
+
 namespace GWT.Application.Services;
 
 public class FundService : IFundService
@@ -69,7 +71,7 @@ public class FundService : IFundService
                 _logger.LogDebug("Global search '{Query}' → {Count} results from fund_meta DB", query, dbResults.Count);
                 return dbResults.Select(f =>
                     navSnapshot.TryGetValue(f.Ticker, out var q)
-                        ? new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp)
+                        ? new FundSearchResultDto(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, q.Price, q.Timestamp, CurrencyHelper.GetCurrency(f.Ticker, f.Timezone))
                         : ToSearchResultDto(f)).ToList();
             }
 
@@ -80,7 +82,7 @@ public class FundService : IFundService
     }
 
     private static FundSearchResultDto ToSearchResultDto(FundMeta f) =>
-        new(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, f.LatestNav, f.NavDate);
+        new(f.Id, f.Region, f.Name, f.Amc, f.Ticker, f.SchemeCode, f.Category, f.LatestNav, f.NavDate, CurrencyHelper.GetCurrency(f.Ticker, f.Timezone));
 
     public async Task<FundNavDto> GetNavAsync(string ticker, Region region, CancellationToken ct = default)
     {

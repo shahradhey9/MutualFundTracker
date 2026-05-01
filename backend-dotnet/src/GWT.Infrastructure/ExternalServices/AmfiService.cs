@@ -75,7 +75,8 @@ public class AmfiService : IAmfiService
                 SchemeCode: f.SchemeCode,
                 Category: null,
                 LatestNav: f.Nav,
-                NavDate: f.NavDate))
+                NavDate: f.NavDate,
+                Currency: "INR"))
             .ToList();
 
         // 3. Store in process-level cache and attempt Redis (no-op on Render free tier).

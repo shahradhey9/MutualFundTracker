@@ -11,5 +11,6 @@ public record FundSearchResultDto(
     string? SchemeCode,
     string? Category,
     decimal? LatestNav,
-    DateTime? NavDate
+    DateTime? NavDate,
+    string Currency = "USD"   // ISO 4217 — derived from ticker suffix / exchange timezone
 );

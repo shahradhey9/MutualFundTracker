@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GWT.Application;
 using GWT.Application.DTOs.Funds;
 using GWT.Application.Interfaces.Services;
 using GWT.Domain.Enums;
@@ -232,7 +233,8 @@ public class YahooFinanceService : IYahooFinanceService
                     SchemeCode: null,
                     Category:  type,
                     LatestNav: null,
-                    NavDate:   null));
+                    NavDate:   null,
+                    Currency:  CurrencyHelper.GetCurrency(ticker)));
             }
         }
         catch (Exception ex)
