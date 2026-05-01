@@ -70,9 +70,16 @@ export function fmtPct(n, withSign = true) {
 }
 
 export function fmtDate(d) {
-  return new Date(d).toLocaleDateString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-  });
+  if (!d) return '—';
+  // purchaseAt is stored as UTC midnight of the intended calendar date.
+  // new Date("2026-04-30T00:00:00Z") converts to local time in negative-offset
+  // zones (e.g. EDT = UTC-4) and shows April 29 — one day too early.
+  // Fix: extract YYYY-MM-DD directly and build a *local* midnight Date so
+  // toLocaleDateString renders the correct calendar date regardless of timezone.
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '—';
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // Approximate combined net worth in USD (India holdings converted at spot rate)
