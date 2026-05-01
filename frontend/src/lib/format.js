@@ -26,10 +26,24 @@ export const DISPLAY_CURRENCIES = [
   { code: 'AED', label: 'UAE Dirham',          flag: '🇦🇪' },
 ];
 
+// Currencies that share the '$' symbol with USD — must use explicit prefixes
+// to avoid ambiguity regardless of browser locale behaviour.
+const DOLLAR_PREFIX = { CAD: 'CA$', AUD: 'A$', SGD: 'S$', HKD: 'HK$', NZD: 'NZ$' };
+
 export function fmtCurrency(n, currency = 'USD') {
   if (n == null || isNaN(Number(n))) return '—';
   // INR keeps its traditional Indian grouping (e.g. ₹12,34,567.89)
   if (currency === 'INR') return fmtINR(n);
+  // Dollar-sign currencies: prepend explicit prefix so CA$, A$, S$, HK$ are
+  // never confused with US$.
+  const dollarPrefix = DOLLAR_PREFIX[currency];
+  if (dollarPrefix) {
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(n));
+    return dollarPrefix + formatted;
+  }
   // All other currencies use Intl so the correct symbol is auto-applied
   try {
     return new Intl.NumberFormat('en-US', {
