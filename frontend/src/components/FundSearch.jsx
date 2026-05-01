@@ -5,8 +5,29 @@ import { fmtCurrency } from '../lib/format.js';
 
 const REGIONS = [
   { value: 'INDIA',  label: 'India',  sub: 'AMFI — 4,000+ Direct Growth funds' },
-  { value: 'GLOBAL', label: 'Global', sub: 'NYSE / NASDAQ — equities & ETFs' },
+  { value: 'GLOBAL', label: 'Global', sub: 'Global exchanges — NYSE, LSE, Euronext & more' },
 ];
+
+// Derive the exchange label from a Yahoo Finance ticker suffix.
+function getExchangeLabel(ticker) {
+  if (!ticker) return 'Global';
+  const t = ticker.toUpperCase();
+  if (t.endsWith('.L'))  return 'LSE';
+  if (t.endsWith('.PA')) return 'Euronext Paris';
+  if (t.endsWith('.AS')) return 'Euronext Amsterdam';
+  if (t.endsWith('.DE')) return 'XETRA';
+  if (t.endsWith('.MI')) return 'Borsa Italiana';
+  if (t.endsWith('.BR')) return 'Euronext Brussels';
+  if (t.endsWith('.SW')) return 'SIX Swiss';
+  if (t.endsWith('.TO') || t.endsWith('.V')) return 'TSX';
+  if (t.endsWith('.AX')) return 'ASX';
+  if (t.endsWith('.T'))  return 'TSE';
+  if (t.endsWith('.SI')) return 'SGX';
+  if (t.endsWith('.HK')) return 'HKEX';
+  if (t.endsWith('.BO')) return 'BSE';
+  if (t.endsWith('.NS')) return 'NSE';
+  return 'NYSE/NASDAQ';
+}
 
 export function FundSearch() {
   const {
@@ -226,7 +247,7 @@ export function FundSearch() {
                       </div>
                     </div>
                     <span className={`badge ${searchRegion === 'INDIA' ? 'badge-india' : 'badge-global'}`} style={{ marginLeft: 12 }}>
-                      {searchRegion === 'INDIA' ? 'AMFI' : 'Global'}
+                      {searchRegion === 'INDIA' ? 'AMFI' : getExchangeLabel(fund.ticker)}
                     </span>
                   </div>
                 ))}
