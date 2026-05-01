@@ -107,14 +107,19 @@ public class FundService : IFundService
         if (existing is not null)
         {
             // For global funds, refresh NAV if the stored value is from a previous day.
-            // EnsureFund is called every time a holding is added so this keeps the catalogue
-            // current without waiting for the daily NavSyncBackgroundService.
+            // Check the in-memory snapshot (populated by the background service) first —
+            // zero HTTP cost.  Fall back to a live Yahoo call only when the ticker isn't
+            // in the snapshot yet (e.g. a brand-new fund not yet seen by the background job).
             if (existing.Region == Region.GLOBAL)
             {
                 var today = DateTime.UtcNow.Date;
                 if (existing.NavDate is null || existing.NavDate.Value.Date < today)
                 {
-                    var quote = await _yahoo.GetQuoteAsync(existing.Ticker, ct);
+                    var navSnapshot = _yahoo.GetGlobalNavSnapshot();
+                    var quote = navSnapshot.TryGetValue(existing.Ticker, out var cached)
+                        ? cached
+                        : await _yahoo.GetQuoteAsync(existing.Ticker, ct);
+
                     if (quote is not null)
                     {
                         await _funds.UpdateNavBatchAsync(
@@ -140,7 +145,13 @@ public class FundService : IFundService
         }
         else if (request.Region == Region.GLOBAL)
         {
-            var quote = await _yahoo.GetQuoteAsync(request.Ticker, ct);
+            // Check in-memory snapshot first (populated every 30 min by the background service)
+            // to avoid a live HTTP call for tickers the background job already knows about.
+            var navSnapshot = _yahoo.GetGlobalNavSnapshot();
+            var quote = navSnapshot.TryGetValue(request.Ticker, out var cached)
+                ? cached
+                : await _yahoo.GetQuoteAsync(request.Ticker, ct);
+
             if (quote is not null)
             {
                 nav = quote.Price;

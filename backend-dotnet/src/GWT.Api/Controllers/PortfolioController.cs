@@ -13,13 +13,16 @@ namespace GWT.Api.Controllers;
 public class PortfolioController : ControllerBase
 {
     private readonly IPortfolioService _portfolio;
+    private readonly IFundService _funds;
     private readonly IValidator<AddHoldingRequestDto> _addHoldingValidator;
 
     public PortfolioController(
         IPortfolioService portfolio,
+        IFundService funds,
         IValidator<AddHoldingRequestDto> addHoldingValidator)
     {
         _portfolio = portfolio;
+        _funds = funds;
         _addHoldingValidator = addHoldingValidator;
     }
 
@@ -35,13 +38,18 @@ public class PortfolioController : ControllerBase
         return Ok(new { holdings = items });
     }
 
-    /// <summary>Add a new holding or consolidate into an existing position for the same fund.</summary>
+    /// <summary>Add a new holding or consolidate into an existing position for the same fund.
+    /// If the request includes a <c>Fund</c> payload the fund catalogue entry is upserted in the
+    /// same call, saving the client a separate /funds/ensure round-trip.</summary>
     [HttpPost("holdings")]
     public async Task<IActionResult> AddHolding([FromBody] AddHoldingRequestDto request, CancellationToken ct)
     {
         var validation = await _addHoldingValidator.ValidateAsync(request, ct);
         if (!validation.IsValid)
             return BadRequest(new { error = string.Join("; ", validation.Errors.Select(e => e.ErrorMessage)) });
+
+        if (request.Fund is not null)
+            await _funds.EnsureFundAsync(request.Fund, ct);
 
         var holding = await _portfolio.UpsertHoldingAsync(CurrentUserId, request, ct);
         return StatusCode(StatusCodes.Status201Created, holding);

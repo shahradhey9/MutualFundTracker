@@ -27,14 +27,23 @@ export function useAddHolding() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ fund, units, avgCost, purchaseAt }) => {
-      // Step 1: ensure fund exists in fund_meta
-      await api.post('/funds/ensure', fund);
-      // Step 2: create/merge holding
+      // Single request: fund data is bundled so the backend can upsert the fund
+      // catalogue entry and create the holding in one round-trip.
       const { data } = await api.post('/portfolio/holdings', {
         fundId: fund.id,
         units: Number(units),
         avgCost: avgCost ? Number(avgCost) : undefined,
         purchaseAt,
+        fund: {
+          id: fund.id,
+          region: fund.region,
+          name: fund.name,
+          amc: fund.amc ?? '',
+          ticker: fund.ticker,
+          schemeCode: fund.schemeCode ?? null,
+          category: fund.category ?? null,
+          isin: null,
+        },
       });
       return data;
     },
