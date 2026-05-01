@@ -12,11 +12,13 @@ const FALLBACK_FROM_USD = {
   // Asia-Pacific
   CNY: 7.25, TWD: 32.5,  KRW: 1380,  THB: 35,
   MYR: 4.7,  IDR: 16300, PHP: 58,    NZD: 1.65,
+  VND: 25500, PKR: 280,  LKR: 300,
   // Europe (non-EUR)
   NOK: 10.8, SEK: 10.5,  DKK: 6.9,   PLN: 4.0,
-  CZK: 23.5, TRY: 33,
+  CZK: 23.5, TRY: 33,    HUF: 390,   RON: 4.6,
+  ISK: 140,
   // Middle East / Africa
-  ILS: 3.7,  ZAR: 18.5,
+  ILS: 3.7,  ZAR: 18.5,  QAR: 3.64,  EGP: 49,
 };
 
 function useFxQuery(from, to, enabled = true) {

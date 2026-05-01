@@ -12,22 +12,44 @@ const REGIONS = [
 function getExchangeLabel(ticker) {
   if (!ticker) return 'Global';
   const t = ticker.toUpperCase();
-  // Europe
+  // Europe — UK
   if (t.endsWith('.L') || t.endsWith('.IL')) return 'LSE';
+  // Euronext
   if (t.endsWith('.PA'))  return 'Euronext Paris';
   if (t.endsWith('.AS'))  return 'Euronext Amsterdam';
-  if (t.endsWith('.DE'))  return 'XETRA';
-  if (t.endsWith('.MI'))  return 'Borsa Italiana';
   if (t.endsWith('.BR'))  return 'Euronext Brussels';
-  if (t.endsWith('.MC'))  return 'BME Madrid';
-  if (t.endsWith('.SW'))  return 'SIX Swiss';
   if (t.endsWith('.LS'))  return 'Euronext Lisbon';
+  if (t.endsWith('.IR'))  return 'Euronext Dublin';
+  // Germany (Xetra + regional)
+  if (t.endsWith('.DE'))  return 'XETRA';
+  if (t.endsWith('.F'))   return 'Frankfurt';
+  if (t.endsWith('.BE'))  return 'Berlin';
+  if (t.endsWith('.SG'))  return 'Stuttgart';
+  if (t.endsWith('.MU'))  return 'Munich';
+  if (t.endsWith('.DU'))  return 'Düsseldorf';
+  if (t.endsWith('.HA'))  return 'Hannover';
+  if (t.endsWith('.HM'))  return 'Hamburg';
+  // Other EUR-zone
+  if (t.endsWith('.MI'))  return 'Borsa Italiana';
+  if (t.endsWith('.MC'))  return 'BME Madrid';
+  if (t.endsWith('.AT'))  return 'Athens';
+  if (t.endsWith('.HE'))  return 'Nasdaq Helsinki';
+  if (t.endsWith('.VI'))  return 'Wiener Börse';
+  if (t.endsWith('.ZG'))  return 'Zagreb';
+  if (t.endsWith('.TL'))  return 'Nasdaq Tallinn';
+  if (t.endsWith('.RG'))  return 'Nasdaq Riga';
+  if (t.endsWith('.VS'))  return 'Nasdaq Vilnius';
+  // Non-EUR European
+  if (t.endsWith('.SW'))  return 'SIX Swiss';
   if (t.endsWith('.OL'))  return 'Oslo Børs';
   if (t.endsWith('.ST'))  return 'Nasdaq Stockholm';
-  if (t.endsWith('.HE'))  return 'Nasdaq Helsinki';
   if (t.endsWith('.CO'))  return 'Nasdaq Copenhagen';
   if (t.endsWith('.IS'))  return 'Borsa Istanbul';
   if (t.endsWith('.WA'))  return 'WSE Warsaw';
+  if (t.endsWith('.PR'))  return 'Prague SE';
+  if (t.endsWith('.BUD')) return 'Budapest SE';
+  if (t.endsWith('.RO'))  return 'Bucharest SE';
+  if (t.endsWith('.IC'))  return 'Nasdaq Iceland';
   // North America
   if (t.endsWith('.TO') || t.endsWith('.V') || t.endsWith('.CN')) return 'TSX';
   // Latin America
@@ -49,6 +71,9 @@ function getExchangeLabel(ticker) {
   if (t.endsWith('.KL'))  return 'Bursa Malaysia';
   if (t.endsWith('.JK'))  return 'IDX Indonesia';
   if (t.endsWith('.PS'))  return 'PSE Philippines';
+  if (t.endsWith('.VN'))  return 'HOSE Vietnam';
+  if (t.endsWith('.KA'))  return 'PSX Pakistan';
+  if (t.endsWith('.CM'))  return 'CSE Sri Lanka';
   // India
   if (t.endsWith('.BO'))  return 'BSE';
   if (t.endsWith('.NS'))  return 'NSE';
