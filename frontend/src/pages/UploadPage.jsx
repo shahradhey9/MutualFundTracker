@@ -46,11 +46,25 @@ const S = {
 function UploadStep({ onParsed }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState('');
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfPassword, setPdfPassword] = useState('');
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   const inputRef = useRef();
 
   function handleFile(file) {
     if (!file) return;
-    if (!file.name.endsWith('.csv')) { setError('Please upload a .csv file'); return; }
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      setPdfFile(file);
+      setPdfPassword('');
+      setPdfError('');
+      setError('');
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setError('Please upload a .csv or .pdf (ECAS) file');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -63,11 +77,98 @@ function UploadStep({ onParsed }) {
     reader.readAsText(file);
   }
 
+  async function handlePdfOpen() {
+    if (!pdfFile) return;
+    setPdfParsing(true);
+    setPdfError('');
+    try {
+      const { parseEcasPdf } = await import('../lib/ecasParser.js');
+      const result = await parseEcasPdf(pdfFile, pdfPassword);
+      if (!result.rows.length) {
+        setPdfError('No holdings found. Make sure this is a valid ECAS/CAS statement with active holdings.');
+      } else {
+        onParsed(result);
+      }
+    } catch (err) {
+      if (err.name === 'PasswordException' || err.message?.toLowerCase().includes('password')) {
+        setPdfError(err.code === 2 ? 'Incorrect password. Please try again.' : 'Enter the PDF password to open this file.');
+      } else {
+        setPdfError(err.message || 'Failed to parse PDF. Ensure it is a valid ECAS/CAS statement.');
+      }
+    } finally {
+      setPdfParsing(false);
+    }
+  }
+
   function downloadSample() {
     const blob = new Blob([SAMPLE_CSV], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'gwt-sample-portfolio.csv'; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // PDF password dialog
+  if (pdfFile) {
+    return (
+      <div>
+        <div style={{
+          border: '2px dashed #c7d2fe',
+          borderRadius: 12,
+          padding: '40px 24px',
+          textAlign: 'center',
+          background: '#eef2ff',
+          marginBottom: 20,
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+            {pdfFile.name}
+          </div>
+          <div style={{ fontSize: 13, color: '#6366f1', marginBottom: 22 }}>
+            ECAS/CAS statement detected · Enter the PDF password to import holdings
+          </div>
+          <div style={{ maxWidth: 300, margin: '0 auto' }}>
+            <input
+              type="password"
+              value={pdfPassword}
+              onChange={e => setPdfPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !pdfParsing && handlePdfOpen()}
+              placeholder="PDF password"
+              autoFocus
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                border: pdfError ? '1px solid #fca5a5' : '1px solid #c7d2fe',
+                fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
+                marginBottom: 8, background: '#fff', outline: 'none',
+              }}
+            />
+            {pdfError && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fef2f2', color: '#b91c1c', fontSize: 12, marginBottom: 10, textAlign: 'left', border: '1px solid #fecaca' }}>
+                {pdfError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+              <button
+                style={S.btn('secondary')}
+                onClick={() => { setPdfFile(null); setPdfPassword(''); setPdfError(''); }}
+              >
+                Change file
+              </button>
+              <button
+                style={{ ...S.btn('primary'), opacity: pdfParsing ? 0.65 : 1 }}
+                onClick={handlePdfOpen}
+                disabled={pdfParsing}
+              >
+                {pdfParsing ? 'Opening…' : 'Open PDF'}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 14, lineHeight: 1.5 }}>
+              Tip: NSDL/CDSL ECAS password is usually first 8 characters of PAN + birth year<br/>
+              e.g. <span style={{ fontFamily: 'monospace' }}>ABCDE1231980</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -97,12 +198,12 @@ function UploadStep({ onParsed }) {
           </svg>
         </div>
         <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--color-text-primary)', marginBottom: 6 }}>
-          {dragging ? 'Drop your CSV here' : 'Upload portfolio CSV'}
+          {dragging ? 'Drop your file here' : 'Upload portfolio CSV or ECAS PDF'}
         </div>
         <div style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>
-          Drag and drop or click to browse · .csv files only
+          Drag and drop or click to browse · .csv or .pdf (ECAS/CAS statement)
         </div>
-        <input ref={inputRef} type="file" accept=".csv" style={{ display: 'none' }}
+        <input ref={inputRef} type="file" accept=".csv,.pdf" style={{ display: 'none' }}
           onChange={e => handleFile(e.target.files[0])} />
       </div>
 
@@ -112,45 +213,63 @@ function UploadStep({ onParsed }) {
         </div>
       )}
 
-      {/* CSV format guide */}
-      <div style={S.card}>
-        <div style={S.cardHeader}>
-          <span style={S.cardTitle}>CSV format</span>
-          <button style={S.btn('secondary')} onClick={downloadSample}>Download sample</button>
-        </div>
-        <div style={S.cardBody}>
-          <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
-            Your CSV needs at minimum a <strong>Fund Name</strong> and <strong>Units</strong> column.
-            Column names are flexible — the app understands common broker export formats.
+      {/* Format guides */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ECAS guide */}
+        <div style={S.card}>
+          <div style={S.cardHeader}>
+            <span style={S.cardTitle}>ECAS / CAS Statement (PDF)</span>
+            <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: '#e0e7ff', color: '#4338ca', fontWeight: 500 }}>Recommended</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: 'var(--color-background-secondary)' }}>
-                  {['Fund Name *', 'Units *', 'Buy Price', 'Purchase Date', 'Region'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--color-text-secondary)', borderBottom: '1px solid #e8e8e4', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ['Parag Parikh Flexi Cap Fund', '150', '68.50', '15/01/2023', 'INDIA'],
-                  ['HDFC Mid-Cap Opportunities Fund', '80', '95.20', '10/03/2022', 'INDIA'],
-                  ['Vanguard S&P 500 ETF', '12', '380.00', '05/02/2023', 'GLOBAL'],
-                ].map((row, i) => (
-                  <tr key={i}>
-                    {row.map((cell, j) => (
-                      <td key={j} style={{ padding: '7px 12px', fontSize: 12, color: 'var(--color-text-secondary)', borderBottom: i < 2 ? '1px solid #f1f5f9' : 'none', fontFamily: j > 0 ? 'var(--font-mono, monospace)' : 'inherit' }}>
-                        {cell}
-                      </td>
+          <div style={{ ...S.cardBody, fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+            Upload your <strong>NSDL/CDSL Consolidated Account Statement</strong> (password-protected PDF).
+            The app will automatically extract all your mutual fund holdings including units and average cost.
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+              Get your ECAS at <strong>nsdl.co.in</strong> → MF Services → CAS, or email <strong>cas@nsdl.co.in</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* CSV guide */}
+        <div style={S.card}>
+          <div style={S.cardHeader}>
+            <span style={S.cardTitle}>CSV format</span>
+            <button style={S.btn('secondary')} onClick={downloadSample}>Download sample</button>
+          </div>
+          <div style={S.cardBody}>
+            <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
+              Your CSV needs at minimum a <strong>Fund Name</strong> and <strong>Units</strong> column.
+              Column names are flexible — the app understands common broker export formats.
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: 'var(--color-background-secondary)' }}>
+                    {['Fund Name *', 'Units *', 'Buy Price', 'Purchase Date', 'Region'].map(h => (
+                      <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: 'var(--color-text-secondary)', borderBottom: '1px solid #e8e8e4', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 10 }}>
-            * Required · Also accepted: "Scheme Name", "Quantity", "Qty", "Avg Cost", "Avg NAV", "Cost Basis"
+                </thead>
+                <tbody>
+                  {[
+                    ['Parag Parikh Flexi Cap Fund', '150', '68.50', '15/01/2023', 'INDIA'],
+                    ['HDFC Mid-Cap Opportunities Fund', '80', '95.20', '10/03/2022', 'INDIA'],
+                    ['Vanguard S&P 500 ETF', '12', '380.00', '05/02/2023', 'GLOBAL'],
+                  ].map((row, i) => (
+                    <tr key={i}>
+                      {row.map((cell, j) => (
+                        <td key={j} style={{ padding: '7px 12px', fontSize: 12, color: 'var(--color-text-secondary)', borderBottom: i < 2 ? '1px solid #f1f5f9' : 'none', fontFamily: j > 0 ? 'var(--font-mono, monospace)' : 'inherit' }}>
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 10 }}>
+              * Required · Also accepted: "Scheme Name", "Quantity", "Qty", "Avg Cost", "Avg NAV", "Cost Basis"
+            </div>
           </div>
         </div>
       </div>
@@ -208,6 +327,7 @@ function MatchRow({ row, index, onUpdate }) {
             <span>{row.units} units</span>
             {row.avgCost && <span>@ ₹{row.avgCost}</span>}
             <span>{row.date}</span>
+            {row.isin && <span style={{ color: '#6366f1' }}>{row.isin}</span>}
             <span style={S.badge(row.region === 'INDIA' ? 'amber' : 'blue')}>{row.region}</span>
           </div>
 
@@ -287,7 +407,7 @@ function MatchRow({ row, index, onUpdate }) {
   );
 }
 
-function ReviewStep({ parsed, onImport, onBack }) {
+function ReviewStep({ parsed, onImport, onBack, sourceLabel }) {
   const [rows, setRows] = useState(() =>
     parsed.rows.map(r => ({ ...r, csvName: r.name, matched: null, status: 'pending', matchScore: 0 }))
   );
@@ -347,6 +467,7 @@ function ReviewStep({ parsed, onImport, onBack }) {
           ticker: row.matched.ticker,
           schemeCode: row.matched.schemeCode,
           category: row.matched.category,
+          isin: row.isin || row.matched.isin,
         });
         // Add holding
         await api.post('/portfolio/holdings', {
@@ -417,7 +538,7 @@ function ReviewStep({ parsed, onImport, onBack }) {
 
       <div style={S.card}>
         <div style={S.cardHeader}>
-          <span style={S.cardTitle}>Review matches — {rows.length} funds from CSV</span>
+          <span style={S.cardTitle}>Review matches — {rows.length} funds from {sourceLabel}</span>
         </div>
         {rows.map((row, i) => (
           <MatchRow key={i} row={row} index={i} onUpdate={updateRow} />
@@ -466,7 +587,7 @@ export function UploadPage({ onDone }) {
       {/* Step indicator */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 24 }}>
         {[
-          { id: 'upload', label: 'Upload CSV' },
+          { id: 'upload', label: 'Upload File' },
           { id: 'review', label: 'Review & match' },
           { id: 'done',   label: 'Import' },
         ].map((s, i, arr) => (
@@ -497,6 +618,7 @@ export function UploadPage({ onDone }) {
       {step === 'review' && parsed && (
         <ReviewStep
           parsed={parsed}
+          sourceLabel={parsed.sourceType === 'ecas' ? 'ECAS statement' : 'CSV'}
           onBack={() => setStep('upload')}
           onImport={(count, errors) => { setImportResult({ count, errors }); setStep('done'); }}
         />
