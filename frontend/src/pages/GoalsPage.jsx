@@ -162,7 +162,7 @@ function GoalCard({ goal, onEdit, onDelete }) {
           {goal.taggedFunds.length === 0
             ? <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No funds tagged</div>
             : <ol style={{ margin: 0, paddingLeft: 18 }}>
-                {goal.taggedFunds.map((f, i) => (
+                {goal.taggedFunds.map((f) => (
                   <li key={f.holdingId} style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, lineHeight: 1.4 }}>
                     {f.name}
                     {f.currentValue != null && (
@@ -359,17 +359,20 @@ export function GoalsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState(null);
+  const [modalKey, setModalKey] = useState(0);
 
   const holdings = portfolio || [];
 
   function openAdd() {
     setEditingGoal(null);
     setModalOpen(true);
+    setModalKey(k => k + 1);
   }
 
   function openEdit(goal) {
     setEditingGoal(goal);
     setModalOpen(true);
+    setModalKey(k => k + 1);
   }
 
   function closeModal() {
@@ -445,6 +448,7 @@ export function GoalsPage() {
       ))}
 
       <GoalModal
+        key={modalKey}
         open={modalOpen}
         onClose={closeModal}
         initialData={editInitialData}
