@@ -134,6 +134,22 @@ export function PortfolioPage() {
   const globalInDisplay = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
   const totalValue      = indiaInDisplay + globalInDisplay;
 
+  // For mixed global currencies: express total in dominant native currency via cross-rate
+  // e.g. BLOK(USD) + LVMH(EUR) → show in USD since BLOK dominates by value
+  let globalCardValue    = globalNativeTotal;
+  let globalCardCurrency = globalNativeCurrency;
+  if (!isSingleGlobalCurrency && globalNativeCurrencies.length > 0) {
+    const entries = globalNativeCurrencies.map(c => ({
+      c, inDisplay: convert(globalByCurrency[c], c) ?? 0,
+    }));
+    const dom = entries.reduce((a, b) => a.inDisplay >= b.inDisplay ? a : b);
+    const ratePerDisplay = convert(1, dom.c) ?? 0;
+    globalCardCurrency = dom.c;
+    globalCardValue = ratePerDisplay > 0
+      ? entries.reduce((sum, e) => sum + e.inDisplay / ratePerDisplay, 0)
+      : globalInDisplay;
+  }
+
   const totalCost    = holdings.reduce((s, h) => s + (convert(h.costBasis, h.currency) ?? 0), 0);
   const totalGain    = holdings.reduce((s, h) => s + (convert(h.gain, h.currency) ?? 0), 0);
   const totalGainPct = totalCost > 0 ? (totalGain / totalCost) * 100 : null;
@@ -163,13 +179,11 @@ export function PortfolioPage() {
         />
         <StatCard
           label="Global holdings"
-          value={isLoading ? '—' : globalHoldings.length
-            ? isSingleGlobalCurrency
-              ? fmtCurrency(globalNativeTotal, globalNativeCurrency)
-              : fmtCurrency(globalInDisplay, displayCurrency)
-            : '—'}
+          value={isLoading ? '—' : globalHoldings.length ? fmtCurrency(globalCardValue, globalCardCurrency) : '—'}
           sub={globalHoldings.length
-            ? `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''}${!isSingleGlobalCurrency ? ` · ${displayCurrency}` : ''}`
+            ? isSingleGlobalCurrency
+              ? `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''}`
+              : `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''} · ${globalNativeCurrencies.map(c => fmtCurrency(globalByCurrency[c], c)).join(' + ')}`
             : null}
           accent="#10b981"
         />
