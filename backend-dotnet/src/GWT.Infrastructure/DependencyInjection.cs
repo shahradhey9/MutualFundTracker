@@ -48,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IFundMetaRepository, FundMetaRepository>();
         services.AddScoped<IHoldingRepository, HoldingRepository>();
         services.AddScoped<INavHistoryRepository, NavHistoryRepository>();
+        services.AddScoped<IGoalRepository, GoalRepository>();
 
         // ── External HTTP Clients ─────────────────────────────────────────
         services.AddHttpClient<IAmfiService, AmfiService>(client =>

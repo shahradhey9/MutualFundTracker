@@ -12,6 +12,7 @@ import { PortfolioPage } from './pages/PortfolioPage.jsx';
 import { AddHoldingPage } from './pages/AddHoldingPage.jsx';
 import { AnalyticsPage } from './pages/AnalyticsPage.jsx';
 import { UploadPage } from './pages/UploadPage.jsx';
+import { GoalsPage } from './pages/GoalsPage.jsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +40,10 @@ const NAV_ITEMS = [
   {
     id: 'analytics', label: 'Analytics',
     icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 11a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1v-3zm5-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V2z"/></svg>,
+  },
+  {
+    id: 'goals', label: 'Goals',
+    icon: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-3a3 3 0 1 0 0 6A3 3 0 0 0 8 5zm-4 3a4 4 0 1 1 8 0 4 4 0 0 1-8 0z"/></svg>,
   },
 ];
 
@@ -176,7 +181,7 @@ function TopBar({ user }) {
   const name = user?.name || user?.email?.split('@')[0] || 'Investor';
   const today = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
   const { mutate: refreshNav, isPending: isRefreshing } = useRefreshNav();
-  const titles = { portfolio: 'Portfolio Overview', add: 'Add Holding', upload: 'Upload CSV', analytics: 'Analytics' };
+  const titles = { portfolio: 'Portfolio Overview', add: 'Add Holding', upload: 'Upload CSV', analytics: 'Analytics', goals: 'Financial Goals' };
 
   return (
     <>
@@ -301,6 +306,7 @@ function Shell() {
               {activeTab === 'add'        && <AddHoldingPage />}
               {activeTab === 'upload'     && <UploadPage onDone={() => setActiveTab('portfolio')} />}
               {activeTab === 'analytics'  && <AnalyticsPage />}
+              {activeTab === 'goals'      && <GoalsPage />}
             </ErrorBoundary>
           </div>
         </div>

@@ -17,4 +17,5 @@ public class Holding
 
     public User User { get; set; } = null!;
     public FundMeta Fund { get; set; } = null!;
+    public ICollection<GoalFund> GoalFunds { get; set; } = [];
 }

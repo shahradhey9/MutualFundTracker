@@ -14,6 +14,7 @@ public static class DependencyInjection
         services.AddScoped<IFundService, FundService>();
         services.AddScoped<IPortfolioService, PortfolioService>();
         services.AddScoped<INavSyncService, NavSyncService>();
+        services.AddScoped<IGoalService, GoalService>();
 
         // Register all FluentValidation validators from this assembly
         services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();

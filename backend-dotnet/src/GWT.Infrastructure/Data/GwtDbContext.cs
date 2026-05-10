@@ -12,6 +12,8 @@ public class GwtDbContext : DbContext
     public DbSet<FundMeta> FundMetas => Set<FundMeta>();
     public DbSet<Holding> Holdings => Set<Holding>();
     public DbSet<NavHistory> NavHistories => Set<NavHistory>();
+    public DbSet<Goal> Goals => Set<Goal>();
+    public DbSet<GoalFund> GoalFunds => Set<GoalFund>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -95,8 +97,55 @@ public class GwtDbContext : DbContext
                 .HasForeignKey(n => n.FundId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // One entry per fund per day
             e.HasIndex(n => new { n.FundId, n.NavDate }).IsUnique();
+        });
+
+        // ── Goal ──────────────────────────────────────────────────────────
+        mb.Entity<Goal>(e =>
+        {
+            e.ToTable("goals");
+            e.HasKey(g => g.Id);
+            e.Property(g => g.Id).HasColumnName("id");
+            e.Property(g => g.UserId).HasColumnName("user_id");
+            e.Property(g => g.Title).HasColumnName("title").HasMaxLength(200).IsRequired();
+            e.Property(g => g.GoalType).HasColumnName("goal_type").HasMaxLength(100).IsRequired();
+            e.Property(g => g.TargetAmount).HasColumnName("target_amount").HasColumnType("numeric(18,2)");
+            e.Property(g => g.EndDate).HasColumnName("end_date");
+            e.Property(g => g.Priority).HasColumnName("priority").HasMaxLength(20);
+            e.Property(g => g.InflationRate).HasColumnName("inflation_rate").HasColumnType("numeric(5,2)");
+            e.Property(g => g.TargetDebtPct).HasColumnName("target_debt_pct");
+            e.Property(g => g.CreatedAt).HasColumnName("created_at");
+            e.Property(g => g.UpdatedAt).HasColumnName("updated_at");
+
+            e.HasOne(g => g.User)
+                .WithMany(u => u.Goals)
+                .HasForeignKey(g => g.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(g => g.UserId);
+        });
+
+        // ── GoalFund ──────────────────────────────────────────────────────
+        mb.Entity<GoalFund>(e =>
+        {
+            e.ToTable("goal_funds");
+            e.HasKey(gf => gf.Id);
+            e.Property(gf => gf.Id).HasColumnName("id");
+            e.Property(gf => gf.GoalId).HasColumnName("goal_id");
+            e.Property(gf => gf.HoldingId).HasColumnName("holding_id");
+
+            e.HasOne(gf => gf.Goal)
+                .WithMany(g => g.GoalFunds)
+                .HasForeignKey(gf => gf.GoalId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(gf => gf.Holding)
+                .WithMany(h => h.GoalFunds)
+                .HasForeignKey(gf => gf.HoldingId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One holding can only be tagged to a goal once
+            e.HasIndex(gf => new { gf.GoalId, gf.HoldingId }).IsUnique();
         });
     }
 }
