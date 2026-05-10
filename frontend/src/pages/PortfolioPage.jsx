@@ -88,6 +88,80 @@ function SyncPill({ isFetching, dataUpdatedAt, inrPerUsd, hasHoldings }) {
   );
 }
 
+const EXCHANGE_COUNTRY = {
+  'NYSE Arca': 'USA', 'NYSE': 'USA', 'NASDAQ': 'USA', 'Cboe': 'USA', 'BATS': 'USA',
+  'Paris': 'France', 'Euronext Paris': 'France',
+  'London': 'UK', 'LSE': 'UK',
+  'Frankfurt': 'Germany', 'XETRA': 'Germany',
+  'Amsterdam': 'Netherlands',
+  'Tokyo': 'Japan', 'TSE': 'Japan',
+  'Sydney': 'Australia', 'ASX': 'Australia',
+  'Hong Kong': 'Hong Kong', 'HKEX': 'Hong Kong',
+  'Toronto': 'Canada', 'TSX': 'Canada',
+  'Singapore': 'Singapore', 'SGX': 'Singapore',
+  'Zurich': 'Switzerland', 'SIX': 'Switzerland',
+  'Milan': 'Italy', 'Madrid': 'Spain', 'Stockholm': 'Sweden',
+  'Copenhagen': 'Denmark', 'Oslo': 'Norway', 'Helsinki': 'Finland',
+  'Brussels': 'Belgium', 'Vienna': 'Austria', 'Warsaw': 'Poland',
+  'Seoul': 'South Korea', 'KRX': 'South Korea',
+  'Shanghai': 'China', 'Shenzhen': 'China',
+  'Mumbai': 'India', 'NSE': 'India', 'BSE': 'India',
+};
+const CURRENCY_COUNTRY = {
+  USD: 'USA', EUR: 'Europe', GBP: 'UK', JPY: 'Japan',
+  CAD: 'Canada', AUD: 'Australia', HKD: 'Hong Kong', SGD: 'Singapore',
+  CHF: 'Switzerland', KRW: 'South Korea', CNY: 'China', INR: 'India',
+  BRL: 'Brazil', MXN: 'Mexico', ZAR: 'South Africa',
+};
+
+function getHoldingCountry(h) {
+  if (h.amc) {
+    const match = Object.entries(EXCHANGE_COUNTRY).find(([ex]) => h.amc.includes(ex));
+    if (match) return match[1];
+  }
+  return CURRENCY_COUNTRY[h.currency] || h.currency;
+}
+
+function GlobalHoldingsCard({ globalHoldings, isLoading }) {
+  return (
+    <div className="stat-card">
+      <div className="stat-divider" style={{ background: '#10b981' }} />
+      <div className="stat-icon-wrap" style={{ background: '#10b98118' }}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#10b981" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M2 14l4-4 3 3 5-6 4 3"/>
+        </svg>
+      </div>
+      <div className="stat-label">Global Holdings</div>
+      {isLoading || globalHoldings.length === 0 ? (
+        <div className="stat-value">—</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+          {globalHoldings.map(h => (
+            <div key={h.holdingId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+                  {h.ticker}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {getHoldingCountry(h)}
+                </div>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', textAlign: 'right' }}>
+                {fmtCurrency(h.currentValue, h.currency)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {globalHoldings.length > 0 && (
+        <div className="stat-sub" style={{ color: 'var(--text-muted)', marginTop: 6 }}>
+          {globalHoldings.length} ETF{globalHoldings.length !== 1 ? 's' : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SkeletonTable() {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -118,37 +192,10 @@ export function PortfolioPage() {
   // India: always sum raw INR values — no currency conversion
   const indiaRawTotal = indiaHoldings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
 
-  // Global: group by native trading currency to detect if all funds share one currency
-  const globalByCurrency = {};
-  for (const h of globalHoldings) {
-    if (h.currentValue == null) continue;
-    globalByCurrency[h.currency] = (globalByCurrency[h.currency] ?? 0) + h.currentValue;
-  }
-  const globalNativeCurrencies = Object.keys(globalByCurrency);
-  const isSingleGlobalCurrency = globalNativeCurrencies.length === 1;
-  const globalNativeCurrency   = globalNativeCurrencies[0] ?? displayCurrency;
-  const globalNativeTotal      = isSingleGlobalCurrency ? (globalByCurrency[globalNativeCurrency] ?? 0) : 0;
-
   // Total net worth: convert everything to selected display currency
   const indiaInDisplay  = indiaHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
   const globalInDisplay = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
   const totalValue      = indiaInDisplay + globalInDisplay;
-
-  // For mixed global currencies: express total in dominant native currency via cross-rate
-  // e.g. BLOK(USD) + LVMH(EUR) → show in USD since BLOK dominates by value
-  let globalCardValue    = globalNativeTotal;
-  let globalCardCurrency = globalNativeCurrency;
-  if (!isSingleGlobalCurrency && globalNativeCurrencies.length > 0) {
-    const entries = globalNativeCurrencies.map(c => ({
-      c, inDisplay: convert(globalByCurrency[c], c) ?? 0,
-    }));
-    const dom = entries.reduce((a, b) => a.inDisplay >= b.inDisplay ? a : b);
-    const ratePerDisplay = convert(1, dom.c) ?? 0;
-    globalCardCurrency = dom.c;
-    globalCardValue = ratePerDisplay > 0
-      ? entries.reduce((sum, e) => sum + e.inDisplay / ratePerDisplay, 0)
-      : globalInDisplay;
-  }
 
   const totalCost    = holdings.reduce((s, h) => s + (convert(h.costBasis, h.currency) ?? 0), 0);
   const totalGain    = holdings.reduce((s, h) => s + (convert(h.gain, h.currency) ?? 0), 0);
@@ -177,16 +224,7 @@ export function PortfolioPage() {
           sub={indiaHoldings.length ? `${indiaHoldings.length} fund${indiaHoldings.length > 1 ? 's' : ''}` : null}
           accent="#f59e0b"
         />
-        <StatCard
-          label="Global holdings"
-          value={isLoading ? '—' : globalHoldings.length ? fmtCurrency(globalCardValue, globalCardCurrency) : '—'}
-          sub={globalHoldings.length
-            ? isSingleGlobalCurrency
-              ? `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''}`
-              : `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''} · ${globalNativeCurrencies.map(c => fmtCurrency(globalByCurrency[c], c)).join(' + ')}`
-            : null}
-          accent="#10b981"
-        />
+        <GlobalHoldingsCard globalHoldings={globalHoldings} isLoading={isLoading} />
       </div>
 
       <div className="gwt-table-wrap">
