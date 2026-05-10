@@ -115,9 +115,24 @@ export function PortfolioPage() {
   const indiaHoldings  = holdings.filter(h => h.region === 'INDIA');
   const globalHoldings = holdings.filter(h => h.region === 'GLOBAL');
 
-  const indiaValue  = indiaHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
-  const globalValue = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
-  const totalValue  = indiaValue + globalValue;
+  // India: always sum raw INR values — no currency conversion
+  const indiaRawTotal = indiaHoldings.reduce((s, h) => s + (h.currentValue ?? 0), 0);
+
+  // Global: group by native trading currency to detect if all funds share one currency
+  const globalByCurrency = {};
+  for (const h of globalHoldings) {
+    if (h.currentValue == null) continue;
+    globalByCurrency[h.currency] = (globalByCurrency[h.currency] ?? 0) + h.currentValue;
+  }
+  const globalNativeCurrencies = Object.keys(globalByCurrency);
+  const isSingleGlobalCurrency = globalNativeCurrencies.length === 1;
+  const globalNativeCurrency   = globalNativeCurrencies[0] ?? displayCurrency;
+  const globalNativeTotal      = isSingleGlobalCurrency ? (globalByCurrency[globalNativeCurrency] ?? 0) : 0;
+
+  // Total net worth: convert everything to selected display currency
+  const indiaInDisplay  = indiaHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
+  const globalInDisplay = globalHoldings.reduce((s, h) => s + (convert(h.currentValue, h.currency) ?? 0), 0);
+  const totalValue      = indiaInDisplay + globalInDisplay;
 
   const totalCost    = holdings.reduce((s, h) => s + (convert(h.costBasis, h.currency) ?? 0), 0);
   const totalGain    = holdings.reduce((s, h) => s + (convert(h.gain, h.currency) ?? 0), 0);
@@ -142,14 +157,20 @@ export function PortfolioPage() {
         />
         <StatCard
           label="India holdings"
-          value={isLoading ? '—' : indiaHoldings.length ? fmtCurrency(indiaValue, displayCurrency) : '—'}
+          value={isLoading ? '—' : indiaHoldings.length ? fmtCurrency(indiaRawTotal, 'INR') : '—'}
           sub={indiaHoldings.length ? `${indiaHoldings.length} fund${indiaHoldings.length > 1 ? 's' : ''}` : null}
           accent="#f59e0b"
         />
         <StatCard
           label="Global holdings"
-          value={isLoading ? '—' : globalHoldings.length ? fmtCurrency(globalValue, displayCurrency) : '—'}
-          sub={globalHoldings.length ? `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''}` : null}
+          value={isLoading ? '—' : globalHoldings.length
+            ? isSingleGlobalCurrency
+              ? fmtCurrency(globalNativeTotal, globalNativeCurrency)
+              : fmtCurrency(globalInDisplay, displayCurrency)
+            : '—'}
+          sub={globalHoldings.length
+            ? `${globalHoldings.length} ETF${globalHoldings.length > 1 ? 's' : ''}${!isSingleGlobalCurrency ? ` · ${displayCurrency}` : ''}`
+            : null}
           accent="#10b981"
         />
       </div>
