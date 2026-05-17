@@ -41,22 +41,7 @@ services.AddControllers()
     });
 
 // OpenAPI (Scalar UI — replaces Swashbuckle, compatible with .NET 10)
-services.AddOpenApi(options =>
-{
-    options.AddDocumentTransformer((document, context, ct) =>
-    {
-        document.Components ??= new Microsoft.OpenApi.Models.OpenApiComponents();
-        document.Components.SecuritySchemes["Bearer"] = new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-        {
-            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-            Scheme = "bearer",
-            BearerFormat = "JWT",
-            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-            Name = "Authorization"
-        };
-        return Task.CompletedTask;
-    });
-});
+services.AddOpenApi();
 
 // ── JWT Authentication ─────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
