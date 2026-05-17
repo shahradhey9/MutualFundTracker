@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: 'gwt-backend'           # ← change to your App Service name
+  AZURE_WEBAPP_NAME: 'gwt-backend-dsahcsa9bjewdce4'
   DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: 'backend-dotnet/src/GWT.Api/GWT.Api.csproj'
   PUBLISH_DIR: './publish'
