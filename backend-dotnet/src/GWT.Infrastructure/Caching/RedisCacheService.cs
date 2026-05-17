@@ -25,7 +25,7 @@ public class RedisCacheService : ICacheService
         {
             var value = await Db.StringGetAsync(key);
             if (value.IsNullOrEmpty) return null;
-            return JsonSerializer.Deserialize<T>(value!, JsonOpts);
+            return JsonSerializer.Deserialize<T>((string)value!, JsonOpts);
         }
         catch (Exception ex)
         {
