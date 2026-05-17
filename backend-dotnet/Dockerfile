@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files first for optimal layer caching
@@ -21,13 +21,13 @@ RUN dotnet publish src/GWT.Api/GWT.Api.csproj \
     --no-restore
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# Render injects $PORT at runtime; default to 4000 for local Docker use
-EXPOSE 4000
-ENV ASPNETCORE_URLS=http://+:4000
+# PORT is set by the host at runtime (Fly.io: fly.toml [env] PORT=8080); default 4000 for local use
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
 
 # Shell form so $PORT expands at container startup
 CMD sh -c "ASPNETCORE_URLS=http://+:${PORT:-4000} dotnet GWT.Api.dll"

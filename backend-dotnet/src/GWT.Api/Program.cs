@@ -10,6 +10,10 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using System.Threading.RateLimiting;
 
+// TEMP: written to stderr before Serilog starts — always visible in fly logs
+Console.Error.WriteLine($"[GWT-BOOT] DATABASE_URL={(Environment.GetEnvironmentVariable("DATABASE_URL") is { } u ? $"SET len={u.Length} start={u[..Math.Min(5,u.Length)]}" : "NOT SET")}");
+Console.Error.WriteLine($"[GWT-BOOT] CONN_STR={(Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection") is { } c ? $"SET len={c.Length} start={c[..Math.Min(5,c.Length)]}" : "NOT SET")}");
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Serilog Structured Logging ─────────────────────────────────────────────
@@ -36,32 +40,21 @@ services.AddControllers()
         o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-// Swagger / OpenAPI
-services.AddEndpointsApiExplorer();
-services.AddSwaggerGen(c =>
+// OpenAPI (Scalar UI — replaces Swashbuckle, compatible with .NET 10)
+services.AddOpenApi(options =>
 {
-    c.SwaggerDoc("v1", new() { Title = "Global Wealth Tracker API", Version = "v1" });
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddDocumentTransformer((document, context, ct) =>
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header
-    });
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-    {
+        document.Components ??= new Microsoft.OpenApi.Models.OpenApiComponents();
+        document.Components.SecuritySchemes["Bearer"] = new Microsoft.OpenApi.Models.OpenApiSecurityScheme
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Name = "Authorization"
+        };
+        return Task.CompletedTask;
     });
 });
 
@@ -134,8 +127,8 @@ app.Use(async (context, next) =>
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "GWT API v1"));
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 else
 {
@@ -153,6 +146,13 @@ app.UseAuthorization();
 app.MapControllers();
 
 Log.Information("GWT API starting on {Environment}", app.Environment.EnvironmentName);
+
+// Temporary: diagnose connection string issue
+var _dbUrl  = Environment.GetEnvironmentVariable("DATABASE_URL");
+var _dbConf = builder.Configuration.GetConnectionString("DefaultConnection");
+Log.Information("DB-DEBUG DATABASE_URL={DbUrl} Config={Conf}",
+    _dbUrl  != null ? $"set ({_dbUrl.Length} chars, starts '{_dbUrl[..Math.Min(5,_dbUrl.Length)]}')" : "NULL",
+    _dbConf != null ? $"set ({_dbConf.Length} chars, starts '{_dbConf[..Math.Min(5,_dbConf.Length)]}')" : "NULL");
 
 // ── Step 1: Run DB migrations synchronously before accepting any requests ─────────────
 // This must happen before StartAsync() so EF Core's model is always in sync with the

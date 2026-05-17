@@ -79,6 +79,10 @@ function UploadStep({ onParsed }) {
 
   async function handlePdfOpen() {
     if (!pdfFile) return;
+    if (!pdfPassword.trim()) {
+      setPdfError('Please enter the PDF password.');
+      return;
+    }
     setPdfParsing(true);
     setPdfError('');
     try {
@@ -130,7 +134,7 @@ function UploadStep({ onParsed }) {
             <input
               type="password"
               value={pdfPassword}
-              onChange={e => setPdfPassword(e.target.value)}
+              onChange={e => { setPdfPassword(e.target.value); if (pdfError) setPdfError(''); }}
               onKeyDown={e => e.key === 'Enter' && !pdfParsing && handlePdfOpen()}
               placeholder="PDF password"
               autoFocus

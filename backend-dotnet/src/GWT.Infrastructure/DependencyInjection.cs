@@ -20,9 +20,12 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         // ── Database ──────────────────────────────────────────────────────
-        // Render injects the connection string as a postgres:// URL.
+        // DATABASE_URL env var takes priority (Fly.io / Render / Heroku standard).
+        // Falls back to ConnectionStrings:DefaultConnection from appsettings / env.
         // Npgsql's DbConnectionStringBuilder expects key=value format, so convert if needed.
-        var rawConn = configuration.GetConnectionString("DefaultConnection") ?? "";
+        var rawConn = Environment.GetEnvironmentVariable("DATABASE_URL")
+                      ?? configuration.GetConnectionString("DefaultConnection")
+                      ?? "";
         var connStr = ConvertPostgresUrl(rawConn);
 
         services.AddDbContext<GwtDbContext>(options =>
@@ -106,20 +109,28 @@ public static class DependencyInjection
     // Render (and many PaaS providers) supply PostgreSQL as a URL:
     //   postgres://user:pass@host:5432/dbname
     // Npgsql's connection string builder requires key=value pairs, not a URI.
-    // This method converts the URL format to Npgsql key=value format transparently.
+    // Use regex instead of new Uri() — .NET doesn't parse authority for unregistered schemes.
     private static string ConvertPostgresUrl(string connectionString)
     {
         if (!connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
             !connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
             return connectionString;
 
-        var uri = new Uri(connectionString);
-        var userInfo = uri.UserInfo.Split(':', 2);
-        var user = Uri.UnescapeDataString(userInfo[0]);
-        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
-        var db   = uri.AbsolutePath.TrimStart('/');
-        var port = uri.Port > 0 ? uri.Port : 5432;
+        // Pattern: postgresql://user:pass@host:port/db?...
+        var match = System.Text.RegularExpressions.Regex.Match(
+            connectionString,
+            @"^postgresql?://(?<user>[^:]+):(?<pass>[^@]+)@(?<host>[^:/]+)(?::(?<port>\d+))?/(?<db>[^?]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
-        return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
+        if (!match.Success)
+            return connectionString;
+
+        var user = Uri.UnescapeDataString(match.Groups["user"].Value);
+        var pass = Uri.UnescapeDataString(match.Groups["pass"].Value);
+        var host = match.Groups["host"].Value;
+        var port = match.Groups["port"].Success ? int.Parse(match.Groups["port"].Value) : 5432;
+        var db   = match.Groups["db"].Value;
+
+        return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
     }
 }

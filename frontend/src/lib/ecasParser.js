@@ -69,42 +69,78 @@ function parseEcasLines(lines) {
       continue;
     }
 
-    if (!currentIsin || !currentFundName) continue;
-
-    // NSDL format: "Closing Unit Balance : 237.555"
-    const closingMatch = line.match(/Closing\s+Unit\s+Balance\s*[:\s]+([0-9,]+\.?[0-9]*)/i);
-    if (closingMatch) {
-      const units = parseFloat(closingMatch[1].replace(/,/g, ''));
-      if (units > 0 && !seen.has(currentIsin)) {
-        seen.add(currentIsin);
-
-        // Look ahead up to 8 lines for avg cost
-        let avgCost = null;
-        for (let k = i + 1; k < Math.min(lines.length, i + 8); k++) {
-          if (/ISIN\s*:/i.test(lines[k]) || /^Folio/i.test(lines[k])) break;
-          const m = lines[k].match(/Avg\.?\s*Cost\s*:\s*(?:INR\s*|₹\s*|Rs\.?\s*)?([0-9,]+\.?[0-9]*)/i);
-          if (m) { avgCost = parseFloat(m[1].replace(/,/g, '')) || null; break; }
+    // Label-based unit extraction — only when we have both ISIN and fund name from a label line
+    if (currentIsin && currentFundName) {
+      // NSDL format: "Closing Unit Balance : 237.555"
+      const closingMatch = line.match(/Closing\s+Unit\s+Balance\s*[:\s]+([0-9,]+\.?[0-9]*)/i);
+      if (closingMatch) {
+        const units = parseFloat(closingMatch[1].replace(/,/g, ''));
+        if (units > 0 && !seen.has(currentIsin)) {
+          seen.add(currentIsin);
+          let avgCost = null;
+          for (let k = i + 1; k < Math.min(lines.length, i + 8); k++) {
+            if (/ISIN\s*:/i.test(lines[k]) || /^Folio/i.test(lines[k])) break;
+            const m = lines[k].match(/Avg\.?\s*Cost\s*:\s*(?:INR\s*|₹\s*|Rs\.?\s*)?([0-9,]+\.?[0-9]*)/i);
+            if (m) { avgCost = parseFloat(m[1].replace(/,/g, '')) || null; break; }
+          }
+          const region = /^IN[F1E]/i.test(currentIsin) ? 'INDIA' : 'GLOBAL';
+          rows.push({ name: currentFundName, isin: currentIsin, units, avgCost, date: localToday(), region });
         }
-
-        const region = /^IN[F1E]/i.test(currentIsin) ? 'INDIA' : 'GLOBAL';
-        rows.push({ name: currentFundName, isin: currentIsin, units, avgCost, date: localToday(), region });
+        currentIsin = null;
+        currentFundName = null;
+        continue;
       }
-      currentIsin = null;
-      currentFundName = null;
-      continue;
+
+      // CDSL label format: "UNITS : 237.555"
+      const cdslMatch = line.match(/^UNITS?\s*:\s*([0-9,]+\.?[0-9]*)/i);
+      if (cdslMatch && !seen.has(currentIsin)) {
+        const units = parseFloat(cdslMatch[1].replace(/,/g, ''));
+        if (units > 0) {
+          seen.add(currentIsin);
+          const region = /^IN[F1E]/i.test(currentIsin) ? 'INDIA' : 'GLOBAL';
+          rows.push({ name: currentFundName, isin: currentIsin, units, avgCost: null, date: localToday(), region });
+        }
+        currentIsin = null;
+        currentFundName = null;
+        continue;
+      }
     }
 
-    // CDSL format: "UNITS : 237.555"
-    const cdslMatch = line.match(/^UNITS?\s*:\s*([0-9,]+\.?[0-9]*)/i);
-    if (cdslMatch && !seen.has(currentIsin)) {
-      const units = parseFloat(cdslMatch[1].replace(/,/g, ''));
-      if (units > 0) {
-        seen.add(currentIsin);
-        const region = /^IN[F1E]/i.test(currentIsin) ? 'INDIA' : 'GLOBAL';
-        rows.push({ name: currentFundName, isin: currentIsin, units, avgCost: null, date: localToday(), region });
+    // CDSL TABLE FORMAT: ISIN embedded inline within a table row (no "ISIN :" label)
+    // Row layout: <Scheme Name>  <ISIN>  <FolioNo>  <OpenBal>  <Units+|->  <Units-|->  <ClosingBal>  <Valuation>  <P/L>
+    const tableIsinMatch = line.match(/\b(IN[A-Z0-9]{10})\b/);
+    if (tableIsinMatch && !line.match(/ISIN\s*:/i) && !seen.has(tableIsinMatch[1])) {
+      const isin = tableIsinMatch[1];
+      const isinIdx = line.indexOf(isin);
+      let namePart = line.slice(0, isinIdx).replace(/\s+/g, ' ').trim();
+
+      // If text before ISIN is too short, look back up to 3 lines for the fund name
+      if (namePart.length < 6) {
+        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+          const prev = lines[j].trim();
+          if (!prev || prev.length < 6) continue;
+          if (/^(Folio|KYC|Nominee|Opening|Sub-?Total|Total|ISIN|Scheme\s*Name|MUTUAL\s*FUND)/i.test(prev)) continue;
+          if (/^[\d\s.,/()|\-]+$/.test(prev)) continue;
+          if (/\b(IN[A-Z0-9]{10})\b/.test(prev)) continue; // another ISIN row
+          namePart = prev.replace(/\s+/g, ' ').trim();
+          break;
+        }
       }
-      currentIsin = null;
-      currentFundName = null;
+
+      if (namePart.length > 5) {
+        // Normalise standalone dashes (zero placeholders) to 0.000 then extract decimals
+        const afterIsin = line.slice(isinIdx + isin.length)
+          .replace(/\s-\s/g, ' 0.000 ')
+          .replace(/\s-$/g, ' 0.000');
+        // decimals: [openBal(0), units+(1), units-(2), closingBal(3), valuation(4), pl(5), plPct(6)]
+        const decimals = [...afterIsin.matchAll(/\b(\d[\d,]*\.\d+)/g)]
+          .map(m => parseFloat(m[1].replace(/,/g, '')));
+        if (decimals.length >= 4 && decimals[3] > 0) {
+          seen.add(isin);
+          const region = /^IN[F1E]/i.test(isin) ? 'INDIA' : 'GLOBAL';
+          rows.push({ name: namePart, isin, units: decimals[3], avgCost: null, date: localToday(), region });
+        }
+      }
     }
   }
 
