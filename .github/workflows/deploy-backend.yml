@@ -13,6 +13,7 @@ env:
   DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: 'backend-dotnet/src/GWT.Api/GWT.Api.csproj'
   PUBLISH_DIR: './publish'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build-and-deploy:
